@@ -16,15 +16,17 @@ type (
 		tasks            *sync.Map
 		collectorServer  *collect.CollectorServer
 		deviceRepository repository.DeviceRepository
+		event            *event.EventService
 	}
 )
 
 // NewCollectTaskServer 实例化
-func NewCollectTaskServer(collectorServer *collect.CollectorServer, deviceRepository repository.DeviceRepository) *CollectTaskServer {
+func NewCollectTaskServer(collectorServer *collect.CollectorServer, deviceRepository repository.DeviceRepository, e *event.EventService) *CollectTaskServer {
 	return &CollectTaskServer{
 		tasks:            &sync.Map{},
 		collectorServer:  collectorServer,
 		deviceRepository: deviceRepository,
+		event:            e,
 	}
 }
 
@@ -57,7 +59,11 @@ func InitCollectTaskServer(collectTaskServer *CollectTaskServer, repository repo
 func (cts *CollectTaskServer) Add(task *models.CollectTask) {
 	zap.S().Info("新增定时任务", task)
 	c := cron.New()
-	c.AddFunc(task.Cron, cts.Collect)
+	currentDevices := task.DeviceList
+	c.AddFunc(task.Cron, func() {
+		zap.S().Info("定时任务执行", task)
+		cts.Collect(currentDevices)
+	})
 	cts.tasks.Store(task.Name, c)
 
 	// 启动定时任务
@@ -100,18 +106,35 @@ func (cts *CollectTaskServer) Stop(task *models.CollectTask) {
 }
 
 // Collect 数据采集
-func (cts *CollectTaskServer) Collect() {
+func (cts *CollectTaskServer) Collect(ds []string) {
 	zap.S().Info("采集开始：CollectTaskServer->Collect")
-	devices, _ := cts.deviceRepository.FindAll()
-	for _, device := range devices {
-		if worker, ok := cts.collectorServer.FindByCollectorName(device.Collector.Name); ok {
-			if worker.CollectTaskIsFull() {
-				zap.S().Errorf("采集队列【%s】已满, 忽略掉本次周期对设备【%s】的采集任务。请适当调整采集周期！", device.Collector.Name, device.Name)
-				continue
-			}
+	if len(ds) == 0 {
+		devices, _ := cts.deviceRepository.FindAll()
+		for _, device := range devices {
+			if worker, ok := cts.collectorServer.FindByCollectorName(device.Collector.Name); ok {
+				if worker.CollectTaskIsFull() {
+					zap.S().Errorf("采集队列【%s】已满, 忽略掉本次周期对设备【%s】的采集任务。请适当调整采集周期！", device.Collector.Name, device.Name)
+					continue
+				}
 
-			worker.CollectTask(device)
+				worker.CollectTask(device)
+			}
+		}
+	} else {
+		for _, d := range ds {
+			device, _ := cts.deviceRepository.Find(d)
+			if worker, ok := cts.collectorServer.FindByCollectorName(device.Collector.Name); ok {
+				if worker.CollectTaskIsFull() {
+					zap.S().Errorf("采集队列【%s】已满, 忽略掉本次周期对设备【%s】的采集任务。请适当调整采集周期！", device.Collector.Name, device.Name)
+					continue
+				}
+				worker.CollectTask(device)
+			}
 		}
 	}
 	zap.S().Info("采集结束：CollectTaskServer->Collect")
+	cts.event.Publish(event.Event{
+		Name: "CollectTask_CollectFinish",
+		Data: ds,
+	})
 }

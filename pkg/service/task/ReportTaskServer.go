@@ -3,7 +3,6 @@ package task
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gookit/color"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"sync"
@@ -107,9 +106,7 @@ func (rts *ReportTaskServer) Send() {
 	zap.S().Info("开始数据上报...")
 	// 获取设备数据
 	devices, _ := rts.deviceRepository.FindAll()
-	devicesJson, _ := json.Marshal(devices)
 
-	color.Greenln("设备列表：", string(devicesJson))
 	if len(devices) < 1 {
 		zap.S().Error("设备列表为空！")
 		return
@@ -135,12 +132,6 @@ func (rts *ReportTaskServer) Send() {
 			}
 		}
 		dc := getDeviceCollector(device)
-		//dv := make(map[string]interface{})
-		//dv["name"] = device.Name
-		//dv["type"] = device.Type.Name
-		//dv["online"] = device.Online
-		//dv["address"] = device.Address
-		//dv["reportor"] = dc
 		alarm := make(map[string]interface{})
 		alarm["status"] = device.AlarmStatus
 		alarm["reason"] = device.AlarmReason

@@ -13,6 +13,7 @@ import (
 	"tinyGW/pkg/service/http"
 	"tinyGW/pkg/service/listener"
 	"tinyGW/pkg/service/logger"
+	"tinyGW/pkg/service/ntp"
 	"tinyGW/pkg/service/orm"
 	"tinyGW/pkg/service/script"
 	"tinyGW/pkg/service/subscription"
@@ -22,6 +23,7 @@ import (
 var Module = fx.Options(
 	conf.Module,
 	logger.Module,
+	ntp.Module,
 	event.Module,
 	orm.Module,
 	http.Module,
@@ -37,8 +39,8 @@ var Module = fx.Options(
 	fx.Invoke(collect.InitCollectorServer),
 	// 启动采集任务服务器
 	fx.Invoke(task.InitCollectTaskServer),
-	// 启动上报任务服务器
-	fx.Invoke(task.InitReportTaskServer),
+	// 取消启动上报任务服务器，由采集任务执行完成后上报
+	//fx.Invoke(task.InitReportTaskServer),
 	fx.Invoke(setup),
 )
 
@@ -46,12 +48,17 @@ func setup(
 	lifecycle fx.Lifecycle,
 	server *http.Service,
 	db *gorm.DB,
+	ntpSrv *ntp.NtpService,
 ) {
 	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			go func() {
+				err := ntpSrv.SyncTime()
+				if err != nil {
+					zap.S().Errorln("NTP同步失败！", err)
+				}
 				zap.S().Infoln("启动Web服务器...", server.Server.Addr)
-				err := server.Server.ListenAndServe()
+				err = server.Server.ListenAndServe()
 				if err != nil {
 					_ = out(db)
 					return

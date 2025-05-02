@@ -2,10 +2,10 @@ package ntp
 
 import (
 	"fmt"
-	"strings"
-	"os/exec"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
+	"os/exec"
+	"strings"
 )
 
 type NtpConfig struct {
