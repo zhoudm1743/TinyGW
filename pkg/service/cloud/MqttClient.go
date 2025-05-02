@@ -16,13 +16,13 @@ import (
 
 type (
 	Client struct {
-		client           mqtt.Client
-		stop             chan bool
-		collectorServer  *collect.CollectorServer
-		deviceRepository repository.DeviceRepository
-
-		collectorRepository  repository.CollectorRepository
-		deviceTypeRepository repository.DeviceTypeRepository
+		client                mqtt.Client
+		stop                  chan bool
+		collectorServer       *collect.CollectorServer
+		deviceRepository      repository.DeviceRepository
+		collectTaskRepository repository.CollectTaskRepository
+		collectorRepository   repository.CollectorRepository
+		deviceTypeRepository  repository.DeviceTypeRepository
 	}
 )
 
@@ -35,6 +35,7 @@ func InitMqttClient(
 	deviceRepository repository.DeviceRepository,
 	collectorRepository repository.CollectorRepository,
 	deviceTypeRepository repository.DeviceTypeRepository,
+	collectTaskRepository repository.CollectTaskRepository,
 ) *Client {
 	zap.S().Info("实例化Mqtt Client")
 
@@ -64,12 +65,13 @@ func InitMqttClient(
 	clientOptions.SetReconnectingHandler(reconnectingHandler)
 
 	MClient = &Client{
-		client:               mqtt.NewClient(clientOptions),
-		collectorServer:      collectorServer,
-		deviceRepository:     deviceRepository,
-		collectorRepository:  collectorRepository,
-		deviceTypeRepository: deviceTypeRepository,
-		stop:                 make(chan bool, 1),
+		client:                mqtt.NewClient(clientOptions),
+		collectorServer:       collectorServer,
+		deviceRepository:      deviceRepository,
+		collectorRepository:   collectorRepository,
+		deviceTypeRepository:  deviceTypeRepository,
+		collectTaskRepository: collectTaskRepository,
+		stop:                  make(chan bool, 1),
 	}
 	return MClient
 }
@@ -101,7 +103,7 @@ func (mc *Client) Connect() {
 func (mc *Client) Disconnect() {
 	zap.S().Info("MClient.Disconnect 关闭服务器连接！")
 	online := fmt.Sprintf(`{"online":false,"ts":%d,"name":"%s"}`, time.Now().Unix(), clientId)
-	if token := mc.client.Publish("v1/devices/me/telemetry", 0, false, online); token.Wait() && token.Error() != nil {
+	if token := mc.client.Publish("v1/devices/me/telemetry", 2, false, online); token.Wait() && token.Error() != nil {
 		zap.S().Error("上传网关状态！")
 	}
 	mc.stop <- true
@@ -116,14 +118,15 @@ func (mc *Client) Publish(payload []byte) {
 		return
 	}
 
-	if token := mc.client.Publish("v1/gateway/telemetry", 0, false, payload); token.Wait() && token.Error() != nil {
+	if token := mc.client.Publish("v1/gateway/telemetry", 2, false, payload); token.Wait() && token.Error() != nil {
 		zap.S().Error("上报数据失败！")
 		// 存盘返回
+
 	}
 }
 
 func onConnectHandler(client mqtt.Client) {
-	if token := client.Subscribe("v1/devices/me/rpc/request/+", 0, MClient.receiveMessageHandler); token.Wait() && token.Error() != nil {
+	if token := client.Subscribe("v1/devices/me/rpc/request/+", 2, MClient.receiveMessageHandler); token.Wait() && token.Error() != nil {
 		zap.S().Error("onConnectHandler: Mqtt Client 订阅RPC主题失败！")
 		return
 	}
@@ -131,7 +134,7 @@ func onConnectHandler(client mqtt.Client) {
 	// 检测是否有断线缓存数据，如果有就提交，并删除缓存数据
 	online := fmt.Sprintf(`{"online":true,"ts":%d,"name":"%s"}`, time.Now().Unix(), clientId)
 	zap.S().Infoln("上报数据：" + online)
-	if token := client.Publish("v1/devices/me/telemetry", 0, false, online); token.Wait() && token.Error() != nil {
+	if token := client.Publish("v1/devices/me/telemetry", 2, false, online); token.Wait() && token.Error() != nil {
 		zap.S().Error("上传网关状态！")
 		// 存盘返回
 	}
@@ -224,7 +227,8 @@ func (mc *Client) receiveMessageHandler(client mqtt.Client, msg mqtt.Message) {
 
 func (mc *Client) SendResponse(request worker.CommandRequest, response worker.ResponseParam) {
 	commandResponse := worker.CommandResponse{
-		Method: request.Method,
+		Method:    request.Method,
+		RequestID: request.RequestID,
 		Params: []worker.ResponseParam{
 			response,
 		},

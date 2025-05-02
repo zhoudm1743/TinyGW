@@ -22,6 +22,8 @@ const (
 	SETINSTRUMENTS      = "SetInstruments"
 	SETINSTRUMENTTYPES  = "SetInstrumentTypes"
 	SETINSTRUMENTDRIVER = "SetInstrumentDriver"
+	GetCollectTask      = "GetCollectTask"
+	SetCollectTask      = "SetCollectTask"
 	//------------------------------------------
 	REBOOT  = "Reboot"
 	UPGRADE = "Upgrade"
@@ -44,6 +46,8 @@ func initGatewayCommand() map[string]commandExecutor {
 	result[SETINSTRUMENTS] = setInstruments
 	result[SETINSTRUMENTTYPES] = setInstrumentTypes
 	result[SETINSTRUMENTDRIVER] = setInstrumentDriver
+	result[GetCollectTask] = getCollectTask
+	result[SetCollectTask] = setCollectTask
 	//------------------------------------------------------
 	result[GETLOG] = getLog
 	result[REBOOT] = reboot
@@ -54,6 +58,42 @@ func initGatewayCommand() map[string]commandExecutor {
 	//http.Handle("/metrics", promhttp.Handler())
 
 	return result
+}
+
+func getCollectTask(params map[string]interface{}, client Client) (int, interface{}) {
+	collectTask, err := client.collectTaskRepository.FindAll()
+	if err != nil {
+		zap.S().Errorf("RPC获取采集任务失败, ERROR: %v", err)
+		return 1, nil
+	}
+	return 0, collectTask
+}
+
+func setCollectTask(params map[string]interface{}, client Client) (int, interface{}) {
+	collectTasks, ok := params["collectTask"].([]interface{})
+	if !ok {
+		zap.S().Errorf("RPC设置采集任务失败: 参数collectTask类型不正确")
+		return 1, nil
+	}
+	for _, value := range collectTasks {
+		collectTask, ok := value.(map[string]interface{})
+		if !ok {
+			color.Redln("RPC设置采集任务失败: 参数collectTask类型不正确")
+			return 1, nil
+		}
+		ct := models.CollectTask{}
+		err := mapstructure.Decode(collectTask, &ct)
+		if err != nil {
+			color.Redln("RPC设置采集任务失败: 参数collectTask类型转换失败", err.Error())
+			return 1, nil
+		}
+		err = client.collectTaskRepository.Save(&ct)
+		if err != nil {
+			color.Redln("RPC设置采集任务失败: 保存采集任务时发生错误, ERROR: %v", err)
+			return 1, nil
+		}
+	}
+	return 0, nil
 }
 
 func setInstrumentDriver(params map[string]interface{}, client Client) (int, interface{}) {

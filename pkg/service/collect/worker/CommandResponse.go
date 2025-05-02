@@ -4,8 +4,9 @@ import "encoding/json"
 
 type (
 	CommandResponse struct {
-		Method string          `json:"method"`
-		Params []ResponseParam `json:"params"`
+		Method    string          `json:"method"`
+		RequestID string          `json:"requestID"`
+		Params    []ResponseParam `json:"params"`
 	}
 
 	ResponseParam struct {
