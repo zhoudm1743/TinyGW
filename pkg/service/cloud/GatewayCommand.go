@@ -15,6 +15,7 @@ import (
 // 处理网关操作 网关重启(reboot)、远程升级(upgrade)
 // 获取表具设备(getdevice)、下发表具设备(setdevice)、PING(ping)
 const (
+	GETLOG              = "GetLog"
 	GETDEVICETYPE       = "GetDeviceType"
 	GETCOLLECTORS       = "GetCollectors"
 	SETCOLLECTORS       = "SetCollectors"
@@ -44,6 +45,7 @@ func initGatewayCommand() map[string]commandExecutor {
 	result[SETINSTRUMENTTYPES] = setInstrumentTypes
 	result[SetInstrumentDriver] = setInstrumentDriver
 	//------------------------------------------------------
+	result[GETLOG] = getLog
 	result[REBOOT] = reboot
 	result[UPGRADE] = upgrade
 	result[PING] = ping
@@ -330,4 +332,30 @@ func upgrade(params map[string]interface{}, client Client) (int, interface{}) {
 
 func ping(params map[string]interface{}, client Client) (int, interface{}) {
 	return 0, nil
+}
+
+func getLog(params map[string]interface{}, client Client) (int, interface{}) {
+	// 获取主日志路径
+	mainLogPath := io.GetLogPath()
+	// 备用日志路径
+	fallbackLogPath := "/www/wwwlogs/go/zsxagw.log"
+
+	// 优先检查主路径
+	logPath := mainLogPath
+	if !io.PathExists(logPath) {
+		// 主路径不存在时使用备用路径
+		logPath = fallbackLogPath
+		if !io.PathExists(logPath) {
+			zap.S().Errorf("日志文件不存在，主路径:%s 备用路径:%s", mainLogPath, fallbackLogPath)
+			return 1, nil
+		}
+	}
+
+	content, err := io.ReadLastNLines(logPath, 100)
+	if err != nil {
+		zap.S().Errorf("读取日志文件失败: %v", err)
+		return 1, nil
+	}
+
+	return 0, content
 }

@@ -8,7 +8,12 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strings"
 )
+
+func GetLogPath() string {
+	return path.Join(GetCurrentPath(), "public", "logs", "energy.log")
+}
 
 func GetCurrentPath() string {
 	cur, err := os.Getwd()
@@ -34,17 +39,12 @@ func SureExists(dir string) {
 	}
 }
 
-func PathExists(dir string) (bool, error) {
-	cur := GetCurrentPath()
-
-	_, err := os.Stat(cur + dir)
-	if err == nil {
-		return true, nil
+func PathExists(path string) bool {
+	_, err := os.Stat(path)
+	if err != nil {
+		return os.IsExist(err)
 	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
+	return true
 }
 
 func ReadFile(filename string) ([]byte, error) {
@@ -120,4 +120,62 @@ func Dir(src string, dst string) error {
 func DownloadFile(sourceFile, targetFile string) {
 	remoteFile, _ := url.Parse(sourceFile)
 	OsCommand("wget -O " + targetFile + " " + remoteFile.String())
+}
+
+func ReadLastNLines(path string, n int) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	stat, _ := file.Stat()
+	size := stat.Size()
+	buf := make([]byte, 512)
+	lineCount := 0
+	pos := size
+
+	for lineCount < n && pos > 0 {
+		readSize := int64(len(buf))
+		if pos < readSize {
+			readSize = pos
+		}
+		pos -= readSize
+
+		_, err = file.Seek(pos, io.SeekStart)
+		if err != nil {
+			return nil, err
+		}
+
+		if _, err = io.ReadFull(file, buf[:readSize]); err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		for i := readSize - 1; i >= 0; i-- {
+			if buf[i] == '\n' {
+				lineCount++
+				if lineCount >= n {
+					pos += i + 1
+					break
+				}
+			}
+		}
+	}
+
+	_, err = file.Seek(pos, io.SeekStart)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(strings.TrimSuffix(string(content), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+
+	return []byte(strings.Join(lines, "\n")), nil
 }
