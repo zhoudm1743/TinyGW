@@ -4,7 +4,6 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"sync"
-	"tinyGW/pkg/service/conf"
 )
 
 type Event struct {
@@ -20,7 +19,7 @@ type EventService struct {
 	logger *zap.Logger
 }
 
-func NewEventService(config *conf.Config, log *zap.Logger) *EventService {
+func NewEventService(log *zap.Logger) *EventService {
 	return &EventService{
 		subs:   make(map[string][]Subscription),
 		logger: log,

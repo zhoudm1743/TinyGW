@@ -8,10 +8,11 @@ import (
 	"go.uber.org/zap"
 	"sync"
 	"time"
-	"zsxagw/api/domain"
-	"zsxagw/api/repository"
-	"zsxagw/core/config"
-	"zsxagw/core/mqtt"
+	"tinyGW/app/api/repository"
+	"tinyGW/app/models"
+	"tinyGW/pkg/service/cloud"
+	"tinyGW/pkg/service/conf"
+	"tinyGW/pkg/service/event"
 )
 
 type (
@@ -31,17 +32,32 @@ func NewReportTaskServer(deviceRepository repository.DeviceRepository) *ReportTa
 }
 
 // InitReportTaskServer 初始化
-func InitReportTaskServer(reportTaskServer *ReportTaskServer, repository repository.ReportTaskRepository) {
+func InitReportTaskServer(reportTaskServer *ReportTaskServer, repository repository.ReportTaskRepository, e *event.EventService) {
 	zap.S().Info("初始化上报定时任务")
 	if tasks, err := repository.FindAll(); err == nil {
 		for _, task := range tasks {
 			reportTaskServer.Add(&task)
 		}
 	}
+	e.Subscribe("ReportTask_Add", func(e event.Event) {
+		zap.S().Info("新增上报定时任务", e.Data)
+		task := e.Data.(*models.ReportTask)
+		reportTaskServer.Add(task)
+	})
+	e.Subscribe("ReportTask_Delete", func(e event.Event) {
+		zap.S().Info("删除上报定时任务", e.Data)
+		name := e.Data.(string)
+		reportTaskServer.Delete(name)
+	})
+	e.Subscribe("ReportTask_Update", func(e event.Event) {
+		zap.S().Info("修改上报定时任务", e.Data)
+		task := e.Data.(*models.ReportTask)
+		reportTaskServer.Update(task)
+	})
 }
 
 // Add 新增定时任务，如果定时任务是开启状态，则开启定时任务
-func (rts *ReportTaskServer) Add(task *domain.ReportTask) {
+func (rts *ReportTaskServer) Add(task *models.ReportTask) {
 	zap.S().Info("新增定时任务", task)
 	c := cron.New()
 	c.AddFunc(task.Cron, rts.Send)
@@ -63,13 +79,13 @@ func (rts *ReportTaskServer) Delete(name string) {
 }
 
 // Update 修改定时任务，删除存在的定时任务，同时增加一个新的定时任务
-func (rts *ReportTaskServer) Update(task *domain.ReportTask) {
+func (rts *ReportTaskServer) Update(task *models.ReportTask) {
 	rts.Delete(task.Name)
 	rts.Add(task)
 }
 
 // Start 启动定时任务
-func (rts *ReportTaskServer) Start(task *domain.ReportTask) {
+func (rts *ReportTaskServer) Start(task *models.ReportTask) {
 	zap.S().Info("启动定时任务", task)
 	if value, loaded := rts.tasks.Load(task.Name); loaded {
 		c := value.(*cron.Cron)
@@ -78,7 +94,7 @@ func (rts *ReportTaskServer) Start(task *domain.ReportTask) {
 }
 
 // Stop 停止定时任务
-func (rts *ReportTaskServer) Stop(task *domain.ReportTask) {
+func (rts *ReportTaskServer) Stop(task *models.ReportTask) {
 	zap.S().Info("停止定时任务", task)
 	if value, loaded := rts.tasks.Load(task.Name); loaded {
 		c := value.(*cron.Cron)
@@ -89,7 +105,6 @@ func (rts *ReportTaskServer) Stop(task *domain.ReportTask) {
 // Send 数据上报
 func (rts *ReportTaskServer) Send() {
 	zap.S().Info("开始数据上报...")
-	color.Greenln("开始数据上报...")
 	// 获取设备数据
 	devices, _ := rts.deviceRepository.FindAll()
 	devicesJson, _ := json.Marshal(devices)
@@ -125,7 +140,7 @@ func (rts *ReportTaskServer) Send() {
 		//dv["type"] = device.Type.Name
 		//dv["online"] = device.Online
 		//dv["address"] = device.Address
-		//dv["collector"] = dc
+		//dv["reportor"] = dc
 		alarm := make(map[string]interface{})
 		alarm["status"] = device.AlarmStatus
 		alarm["reason"] = device.AlarmReason
@@ -143,17 +158,17 @@ func (rts *ReportTaskServer) Send() {
 	report := make(map[string]interface{})
 	report["nodes"] = nodes
 	report["ts"] = time.Now().Unix()
-	report["clientId"] = config.NewConfig().ClientID
+	report["clientId"] = conf.NewConfig().Cloud.ClientId
 
 	zap.S().Info("上报内容：", report)
 	result, _ := json.Marshal(report)
 	// 数据上报
-	mqtt.MClient.Publish(result)
+	cloud.MClient.Publish(result)
 	zap.S().Info("上报成功!")
 }
 
 // getDeviceCollector 获取设备采集器
-func getDeviceCollector(device domain.Device) string {
+func getDeviceCollector(device models.Device) string {
 	switch device.Collector.Type {
 	case "Serial":
 		return device.Collector.Serial.Name

@@ -2,43 +2,64 @@ package listener
 
 import (
 	"bytes"
-	"fmt"
-	"github.com/gookit/color"
+	"go.uber.org/zap"
 	"net"
 	"time"
 )
 
-var Listener net.Listener
+var (
+	Listener net.Listener
+	stopChan = make(chan struct{}) // 新增停止信号通道
+)
 
 func Start() {
+	defer func() {
+		if r := recover(); r != nil {
+			zap.S().Infoln("监听器异常重启:", r)
+			time.Sleep(time.Second)
+			Start()
+		}
+	}()
+
 	var err error
 	Listener, err = net.Listen("tcp", "0.0.0.0:51483")
 	if err != nil {
-		fmt.Println("Listen error:", err)
+		zap.S().Infoln("Listen error:", err)
 		time.Sleep(time.Second)
 		Start()
+		return
 	}
-	fmt.Println("监听成功: ", Listener.Addr().String())
+
+	zap.S().Infoln("监听成功: ", Listener.Addr().String())
+
+loop: // 添加循环标签
 	for {
-		conn, err := Listener.Accept()
-		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				fmt.Println("Accept temp error:", ne)
-				time.Sleep(time.Second)
-				continue
+		select {
+		case <-stopChan: // 监听停止信号
+			break loop
+		default:
+			conn, err := Listener.Accept()
+			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Temporary() {
+					zap.S().Infoln("Accept temp error:", ne)
+					time.Sleep(time.Second)
+					continue
+				}
+				zap.S().Errorln("Accept error:", err)
+				break loop // 遇到非临时错误时退出循环
 			}
-			fmt.Println("Accept error:", err)
-			break
+			go handleConn(conn)
 		}
-		go handleConn(conn)
 	}
 }
 
 // Stop 关闭监听
 func Stop() {
-	err := Listener.Close()
-	if err != nil {
-		return
+	close(stopChan) // 发送停止信号
+	if Listener != nil {
+		if err := Listener.Close(); err == nil {
+			Listener = nil // 清空监听器实例
+		}
 	}
 }
 
@@ -48,7 +69,7 @@ func handleConn(conn net.Conn) {
 		n, err := conn.Read(buf)
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				fmt.Println("Read temp error:", ne)
+				zap.S().Infoln("Read temp error:", ne)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -68,7 +89,7 @@ func handleConn(conn net.Conn) {
 func register(code string, c net.Conn) {
 	for _, client := range echoClients {
 		if client.Code == code {
-			color.Println("设备重连: ", code, " Addr: ", c.RemoteAddr().String(), " Time: ", time.Now().Format("2006-01-02 15:04:05"))
+			zap.S().Infoln("设备重连: ", code, " Addr: ", c.RemoteAddr().String(), " Time: ", time.Now().Format("2006-01-02 15:04:05"))
 			delEcho(code)
 			echoClients = append(echoClients, EchoClient{
 				Code:      code,
@@ -79,7 +100,7 @@ func register(code string, c net.Conn) {
 			return
 		}
 	}
-	color.Greenln("注册设备: ", code, " Time:", time.Now().Format("2006-01-02 15:04:05"), c.RemoteAddr().String())
+	zap.S().Infoln("注册设备: ", code, " Time:", time.Now().Format("2006-01-02 15:04:05"), c.RemoteAddr().String())
 	echoClients = append(echoClients, EchoClient{
 		Code:      code,
 		Conn:      c,

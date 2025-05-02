@@ -1,0 +1,27 @@
+server:
+  port: 1883     # 服务端口（默认8080）
+  host: "0.0.0.0" # 监听地址（默认所有网卡）
+  module: "debug" # 运行模式 debug/release
+
+cloud:
+  host: "mqtt.zsxakj.com"  # MQTT服务器地址
+  port: 1883               # MQTT端口
+  username: "energy-cloud" # 连接用户名
+  password: "xakj1PnGD8y#s$"             # 连接密码（需要填写）
+  clientId: "zsxagwA001"             # 客户端ID（需要填写）
+
+serial:
+  openEveryTime: false # 是否每次初始化串口连接
+
+logger:
+  level: "debug"        # 日志级别：debug/info/warn/error
+  filename: "public/logs/energy.log" # 日志文件路径
+  maxsize: 10           # 单个日志文件最大大小(MB)
+  maxbackups: 10        # 保留旧日志文件最大数量
+  maxage: 3             # 保留旧日志文件最大天数
+
+subscribe:
+  host: "mqtt.zsxakj.com"  # MQTT服务器地址
+  port: 1883               # MQTT端口
+  username: "bgscs" # 连接用户名
+  password: "123456"             # 连接密码（需要填写）

@@ -1,10 +1,10 @@
 package collector
 
-import "zsxagw/api/domain"
+import "tinyGW/app/models"
 
 // Collector 【采集器接口】
 type Collector interface {
-	Open(device *domain.Device) bool
+	Open(device *models.Device) bool
 	Close() bool
 	Read(data []byte) int
 	Write(data []byte) int
@@ -14,7 +14,7 @@ type Collector interface {
 }
 
 // ConnectorFactory 【采集器接口】工厂，根据【采集接口】创建不同的【采集器】
-func ConnectorFactory(collector domain.Collector) Collector {
+func ConnectorFactory(collector models.Collector) Collector {
 	switch collector.Type {
 	case "Serial":
 		return &SerialCollector{

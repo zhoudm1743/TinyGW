@@ -4,18 +4,18 @@ import (
 	"github.com/tarm/serial"
 	"go.uber.org/zap"
 	"time"
-	"zsxagw/api/domain"
+	"tinyGW/app/models"
 )
 
 // SerialCollector 【串口采集器】
 type SerialCollector struct {
-	domain.Collector
+	models.Collector
 	*serial.Port
 }
 
 var _ Collector = (*SerialCollector)(nil)
 
-func (s *SerialCollector) Open(device *domain.Device) bool {
+func (s *SerialCollector) Open(device *models.Device) bool {
 	// 采集接口通用设置
 	serialCopy := &s.Serial
 

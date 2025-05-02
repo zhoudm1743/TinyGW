@@ -1,4 +1,4 @@
-package mqtt
+package cloud
 
 import (
 	"encoding/base64"
@@ -7,9 +7,9 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"strings"
-	"zsxagw/api/domain"
-	"zsxagw/core/io"
-	"zsxagw/util"
+	"tinyGW/app/models"
+	"tinyGW/pkg/plugin/io"
+	"tinyGW/pkg/util"
 )
 
 // 处理网关操作 网关重启(reboot)、远程升级(upgrade)
@@ -23,13 +23,9 @@ const (
 	SETINSTRUMENTTYPES  = "SetInstrumentTypes"
 	SetInstrumentDriver = "SetInstrumentDriver"
 	//------------------------------------------
-	REBOOT     = "Reboot"
-	UPGRADE    = "Upgrade"
-	GETDEVICE  = "GetDevices"
-	SETDEVICE  = "SetDevices"
-	GETDEVICE2 = "GetDevices2"
-	SETDEVICE2 = "SetDevices2"
-	PING       = "Ping"
+	REBOOT  = "Reboot"
+	UPGRADE = "Upgrade"
+	PING    = "Ping"
 )
 
 type commandExecutor func(params map[string]interface{}, client Client) (int, interface{})
@@ -50,10 +46,6 @@ func initGatewayCommand() map[string]commandExecutor {
 	//------------------------------------------------------
 	result[REBOOT] = reboot
 	result[UPGRADE] = upgrade
-	result[GETDEVICE] = getDevice
-	result[SETDEVICE] = setDevice
-	result[GETDEVICE2] = getDevice2
-	result[SETDEVICE2] = setDevice2
 	result[PING] = ping
 
 	return result
@@ -145,7 +137,7 @@ func setInstruments(params map[string]interface{}, client Client) (int, interfac
 		cn := c["name"].(string)
 		//instrumentMap["collectTime"] = time.Now()
 		//instrumentMap["ReportTime"] = time.Now()
-		var instrument domain.Device
+		var instrument models.Device
 		err := mapstructure.Decode(instrumentMap, &instrument)
 		if err != nil {
 			color.Redln("RPC设置仪表失败: 参数instruments类型转换失败", err.Error())
@@ -159,13 +151,18 @@ func setInstruments(params map[string]interface{}, client Client) (int, interfac
 				return 1, nil
 			}
 		}
-		instrument.Type = deviceType
+		instrument.Type = &deviceType
 		collector, err := client.collectorRepository.Find(cn)
 		if err != nil {
-			color.Redln("RPC设置仪表失败: 参数collectorName类型不正确")
-			return 1, nil
+			var coll models.Collector
+			util.ToolUtil.Copy(&coll, c)
+			if err := client.collectorRepository.Save(&coll); err != nil {
+				color.Redln("RPC<UNK>: <UNK>, ERROR: %v", err)
+				return 1, nil
+			}
+			collector = coll
 		}
-		instrument.Collector = collector
+		instrument.Collector = &collector
 		if err := client.deviceRepository.Save(&instrument); err != nil {
 			color.Redln("RPC设置仪表失败: 保存设备时发生错误, ERROR: %v", err)
 			return 1, nil
@@ -199,7 +196,7 @@ func setInstrumentTypes(params map[string]interface{}, client Client) (int, inte
 			return 1, nil
 		}
 
-		var instrument domain.DeviceType
+		var instrument models.DeviceType
 		err = mapstructure.Decode(instrumentMap, &instrument)
 		if err != nil {
 			color.Redln("RPC设置仪表失败: 参数instruments类型转换失败", err.Error())
@@ -207,17 +204,16 @@ func setInstrumentTypes(params map[string]interface{}, client Client) (int, inte
 		}
 		deviceType, err := client.deviceTypeRepository.Find(instrument.Name)
 		if err != nil {
-			var dt domain.DeviceType
-			util.ToolUtil.Copy(&dt, instrument)
-			if err := client.deviceTypeRepository.Save(&dt); err != nil {
-				color.Redln("RPC设置仪表失败: 保存设备类型时发生错误, ERROR: %v")
+			util.ToolUtil.Copy(&deviceType, instrument)
+			if err := client.deviceTypeRepository.Save(&deviceType); err != nil {
+				color.Redln("RPC设置仪表失败: 保存设备类型时发生错误, ERROR: %v", err)
 				return 1, nil
 			}
 		}
 		util.ToolUtil.Copy(&deviceType, instrument)
 		//deviceType.Driver =
 		if err := client.deviceTypeRepository.Save(&deviceType); err != nil {
-			color.Redln("RPC设置仪表失败: 保存设备类型时发生错误, ERROR: %v")
+			color.Redln("RPC设置仪表失败: 保存设备类型时发生错误, ERROR: %v", err)
 			return 1, nil
 		}
 
@@ -237,7 +233,7 @@ func setCollectors(params map[string]interface{}, client Client) (int, interface
 		return 1, nil
 	}
 	for _, find := range finds {
-		err := client.collectorRepository.Delete(find.Name)
+		err = client.collectorRepository.Delete(find.Name)
 		if err != nil {
 			color.Redln("RPC设置采集器失败: 删除采集器时发生错误, ERROR: %v")
 			return 1, nil
@@ -249,24 +245,28 @@ func setCollectors(params map[string]interface{}, client Client) (int, interface
 			zap.S().Errorf("RPC设置采集器失败: collector类型不正确")
 			return 1, nil
 		}
-		var c domain.Collector
-		if err := mapstructure.Decode(collector, &c); err != nil {
+		var c models.Collector
+		if err = mapstructure.Decode(collector, &c); err != nil {
 			zap.S().Errorf("RPC设置采集器失败: 解析collector失败, ERROR: %v", err)
 			return 1, nil
 		}
 		find, err := client.collectorRepository.Find(c.Name)
+		color.Greenln("RPC<UNK>:", find.Name)
 		if err != nil {
-			util.ToolUtil.Copy(&find, c)
-			if err := client.collectorRepository.Save(&find); err != nil {
+			var coll models.Collector
+			util.ToolUtil.Copy(&coll, c)
+			if err := client.collectorRepository.Save(&coll); err != nil {
 				zap.S().Errorf("RPC设置采集器失败: 保存采集器时发生错误, ERROR: %v", err)
 				return 1, nil
 			}
-			return 0, nil
+			color.Greenln("RPC设置采集器:", c.Name)
+			find = coll
 		}
 		if find.Name != c.Name {
 			zap.S().Errorf("RPC设置采集器失败: 采集器名称不匹配")
 			return 1, nil
 		}
+		find = models.Collector{}
 		util.ToolUtil.Copy(&find, c)
 		if err := client.collectorRepository.Save(&find); err != nil {
 			zap.S().Errorf("RPC设置采集器失败: 保存采集器时发生错误, ERROR: %v", err)
@@ -291,9 +291,9 @@ func getDeviceType(params map[string]interface{}, client Client) (int, interface
 		zap.S().Errorf("RPC获取设备类型失败, ERROR: %v", err)
 		return 1, nil
 	}
-	result := make([]DeviceType, 0, len(all))
+	result := make([]models.DeviceType, 0, len(all))
 	for _, d := range all {
-		add := DeviceType{
+		add := models.DeviceType{
 			Name:   d.Name,
 			Driver: d.Driver,
 		}
@@ -326,302 +326,6 @@ func upgrade(params map[string]interface{}, client Client) (int, interface{}) {
 	}
 
 	return 0, nil
-}
-
-func getDevice(params map[string]interface{}, client Client) (int, interface{}) {
-	zap.S().Info("执行RPC命令GetDevices")
-
-	var result []Device
-
-	devices, err := client.deviceRepository.FindAll()
-	if err != nil {
-		zap.S().Error("RPC获取设备失败")
-		return 1, result
-	}
-
-	for _, d := range devices {
-		device := Device{
-			CollectName: d.Collector.Name,
-			Name:        d.Name,
-			Addr:        d.Address,
-			Type:        d.Type.Name,
-		}
-		result = append(result, device)
-	}
-
-	return 0, result
-}
-
-func getDevice2(params map[string]interface{}, client Client) (int, interface{}) {
-	zap.S().Info("执行RPC命令GetDevices2")
-
-	var result []Device2
-
-	devices, err := client.deviceRepository.FindAll()
-	if err != nil {
-		zap.S().Error("RPC获取设备失败")
-		return 1, result
-	}
-
-	for _, d := range devices {
-		device := Device2{
-			CollectName: d.Collector.Name,
-			Name:        d.Name,
-			Addr:        d.Address,
-			Type:        d.Type.Name,
-			Alone:       d.Alone,
-			Serial:      d.Serial,
-		}
-		result = append(result, device)
-	}
-
-	return 0, result
-}
-
-func setDevice(params map[string]interface{}, client Client) (int, interface{}) {
-	zap.S().Info("执行RPC命令SetDevices")
-
-	// 1. 获取设备列表
-	devices := convertDevices(params)
-
-	if devices == nil || len(devices) == 0 {
-		return 0, nil
-	}
-
-	// 2. 删除设备信息
-	if clears, err := client.deviceRepository.FindAll(); err == nil {
-		for _, d := range clears {
-			// 删除
-			client.deviceRepository.Delete(d.Name)
-		}
-	}
-
-	// 3. 添加设备信息
-	for _, d := range devices {
-		deviceType, err := client.deviceTypeRepository.Find(d.Type)
-		if err != nil {
-			zap.S().Debug("设备类型[" + d.Type + "]不存在！")
-			continue
-		}
-		collector, err := client.collectorRepository.Find(d.CollectName)
-
-		if err != nil {
-			zap.S().Debug("采集接口[" + d.CollectName + "]不存在！")
-			continue
-		}
-
-		device := &domain.Device{
-			Name:           d.Name,
-			Type:           deviceType,
-			Address:        d.Addr,
-			Collector:      collector,
-			Alone:          false,
-			Serial:         collector.Serial,
-			Online:         false,
-			CollectTime:    0,
-			CollectTotal:   0,
-			CollectSuccess: 0,
-			ReportTime:     0,
-			ReportTotal:    0,
-			ReportSuccess:  0,
-		}
-		client.deviceRepository.Save(device)
-	}
-
-	return 0, nil
-}
-
-// ------------------------------------------------------------
-func convertDevices(params map[string]interface{}) (result []Device) {
-	result = []Device{}
-
-	if devices, ok := params["devices"]; ok {
-		if devs, ok := devices.([]interface{}); ok {
-			for _, device := range devs {
-				if dev, ok := device.(map[string]interface{}); ok {
-					d := Device{}
-
-					if collectName, ok := dev["collectName"]; ok {
-						d.CollectName = convertString(collectName)
-					}
-
-					if name, ok := dev["name"]; ok {
-						d.Name = convertString(name)
-					}
-
-					if addr, ok := dev["addr"]; ok {
-						d.Addr = convertString(addr)
-					}
-
-					if type2, ok := dev["type"]; ok {
-						d.Type = convertString(type2)
-					}
-
-					result = append(result, d)
-				}
-			}
-		}
-	}
-	return result
-}
-
-func setDevice2(params map[string]interface{}, client Client) (int, interface{}) {
-	zap.S().Info("执行RPC命令SetDevices2")
-
-	// 1. 获取设备列表
-	devices := convertDevices2(params)
-
-	if devices == nil || len(devices) == 0 {
-		return 1, nil
-	}
-
-	// 2. 删除设备信息
-	if clears, err := client.deviceRepository.FindAll(); err == nil {
-		for _, d := range clears {
-			// 删除
-			client.deviceRepository.Delete(d.Name)
-		}
-	}
-
-	// 3. 添加设备信息
-	for _, d := range devices {
-		deviceType, err := client.deviceTypeRepository.Find(d.Type)
-		if err != nil {
-			zap.S().Debug("设备类型[" + d.Type + "]不存在！")
-			continue
-		}
-		collector, err := client.collectorRepository.Find(d.CollectName)
-
-		if err != nil {
-			zap.S().Debug("采集接口[" + d.CollectName + "]不存在！")
-			continue
-		}
-
-		device := &domain.Device{
-			Name:           d.Name,
-			Type:           deviceType,
-			Address:        d.Addr,
-			Collector:      collector,
-			Alone:          d.Alone,
-			Serial:         d.Serial,
-			Online:         false,
-			CollectTime:    0,
-			CollectTotal:   0,
-			CollectSuccess: 0,
-			ReportTime:     0,
-			ReportTotal:    0,
-			ReportSuccess:  0,
-		}
-
-		client.deviceRepository.Save(device)
-	}
-
-	return 0, nil
-}
-
-// ------------------------------------------------------------
-func convertDevices2(params map[string]interface{}) (result []Device2) {
-	result = []Device2{}
-
-	if devices, ok := params["devices"]; ok {
-		if devs, ok := devices.([]interface{}); ok {
-			for _, device := range devs {
-				if dev, ok := device.(map[string]interface{}); ok {
-					d := Device2{}
-
-					if collectName, ok := dev["collectName"]; ok {
-						d.CollectName = convertString(collectName)
-					}
-
-					if name, ok := dev["name"]; ok {
-						d.Name = convertString(name)
-					}
-
-					if addr, ok := dev["addr"]; ok {
-						d.Addr = convertString(addr)
-					}
-
-					if type2, ok := dev["type"]; ok {
-						d.Type = convertString(type2)
-					}
-
-					if alone, ok := dev["alone"]; ok {
-						d.Alone = convertBoolean(alone)
-					}
-
-					if d.Alone {
-						if serial, ok := dev["serial"]; ok {
-							d.Serial = *convertSerial(serial)
-						}
-					}
-
-					result = append(result, d)
-				}
-			}
-		}
-	}
-	return
-}
-
-func convertSerial(value interface{}) (result *domain.Serial) {
-	result = &domain.Serial{}
-
-	if serial, ok := value.(map[string]interface{}); ok {
-		if name, ok := serial["name"]; ok {
-			result.Name = convertString(name)
-		}
-
-		if deviceName, ok := serial["deviceName"]; ok {
-			result.DeviceName = convertString(deviceName)
-		}
-
-		if baudRate, ok := serial["baudRate"]; ok {
-			result.BaudRate = (int)(convertFloat64(baudRate))
-		}
-		if dataBit, ok := serial["dataBit"]; ok {
-			result.DataBit = (int)(convertFloat64(dataBit))
-		}
-
-		if stopBit, ok := serial["stopBit"]; ok {
-			result.StopBit = convertString(stopBit)
-		}
-
-		if check, ok := serial["check"]; ok {
-			result.Check = convertString(check)
-		}
-	}
-
-	return
-}
-
-func convertString(value interface{}) (result string) {
-	result = ""
-
-	if temp, ok := value.(string); ok {
-		result = temp
-	}
-
-	return
-}
-
-func convertFloat64(value interface{}) (result float64) {
-	result = 0
-
-	if temp, ok := value.(float64); ok {
-		result = temp
-	}
-
-	return
-}
-
-func convertBoolean(value interface{}) (result bool) {
-	result = false
-
-	if temp, ok := value.(bool); ok {
-		result = temp
-	}
-
-	return
 }
 
 func ping(params map[string]interface{}, client Client) (int, interface{}) {

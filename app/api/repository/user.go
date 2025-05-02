@@ -1,60 +1,77 @@
 package repository
 
 import (
-	"fmt"
+	"errors"
 	"gorm.io/gorm"
 	"tinyGW/app/models"
 )
 
-type CollectorRepository interface {
-	Save(collector *models.Collector) error
+type UserRepository interface {
+	Save(user *models.User) error
 	Delete(name string) error
-	Find(name string) (*models.Collector, error)
-	FindAll() ([]models.Collector, error)
+	Find(name string) (models.User, error)
+	FindAll() ([]models.User, error)
+	List(limit int, offset int) ([]models.User, int64, error)
 }
 
-type collectorRepository struct {
+type userRepository struct {
 	db *gorm.DB
 }
 
-func (c collectorRepository) Save(collector *models.Collector) error {
+func (c userRepository) Save(user *models.User) error {
 	var err error
-	var task models.Collector
-	c.db.Where("name = ?", collector.Name).First(&task)
-	if task.ID != 0 {
-		err = c.db.Model(&task).Save(&collector).Error
-		return err
-	} else {
-		err = c.db.Create(collector).Error
-		return err
+	var task models.User
+	if err = c.db.Where("username = ?", user.Username).First(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = c.db.Create(user).Error
+			return err
+		}
 	}
+	err = c.db.Model(&task).Where("username = ?", user.Username).Updates(user).Error
+	return err
 }
 
-func (c collectorRepository) Delete(name string) error {
-	return c.db.Delete(&models.Collector{}, "name = ?", name).Error
+func (c userRepository) Delete(name string) error {
+	return c.db.Delete(&models.User{}, "username = ?", name).Error
 }
 
-func (c collectorRepository) Find(name string) (*models.Collector, error) {
-	var collector models.Collector
-	c.db.Where("name =?", name).First(&collector)
-	if collector.ID == 0 {
-		return nil, fmt.Errorf("collect task not found")
-	}
-	return &collector, nil
+func (c userRepository) Find(name string) (models.User, error) {
+	var user models.User
+	err := c.db.Where("username = ?", name).First(&user).Error
+	return user, err
 }
 
-func (c collectorRepository) FindAll() ([]models.Collector, error) {
-	var collectors []models.Collector
-	err := c.db.Find(&collectors).Error
+func (c userRepository) FindAll() ([]models.User, error) {
+	var users []models.User
+	err := c.db.Find(&users).Error
 	if err != nil {
 		return nil, err
 	}
-	return collectors, nil
+	return users, nil
 }
 
-func NewCollectorRepository(db *gorm.DB) CollectorRepository {
-	db.AutoMigrate(&models.Collector{})
-	return &collectorRepository{
+func (c userRepository) List(limit int, offset int) ([]models.User, int64, error) {
+	var users []models.User
+	var count int64
+	c.db.Model(&models.User{}).Count(&count)
+	err := c.db.Limit(limit).Offset(offset).Find(&users).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	return users, count, nil
+}
+
+func NewUserRepository(db *gorm.DB) UserRepository {
+	db.AutoMigrate(&models.User{})
+	var count int64
+	db.Model(&models.User{}).Count(&count)
+	if count == 0 {
+		db.Create(&models.User{
+			Username: "admin",
+			Password: "XAKJ8808856",
+		})
+	}
+	return &userRepository{
 		db: db,
 	}
 }

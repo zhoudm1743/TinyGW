@@ -5,18 +5,18 @@ import (
 	"net"
 	"strconv"
 	"time"
-	"zsxagw/api/domain"
+	"tinyGW/app/models"
 )
 
 // TcpClientCollector 【网口采集器】，用于网桥设备
 type TcpClientCollector struct {
-	domain.Collector
+	models.Collector
 	net.Conn
 }
 
 var _ Collector = (*TcpClientCollector)(nil)
 
-func (t *TcpClientCollector) Open(device *domain.Device) bool {
+func (t *TcpClientCollector) Open(device *models.Device) bool {
 	var err error
 	if t.Conn, err = net.DialTimeout("tcp", t.TcpClient.Ip+":"+strconv.Itoa(t.TcpClient.Port), 500*time.Millisecond); err != nil {
 		zap.S().Error("打开Tcp客户端失败!", t.TcpClient)

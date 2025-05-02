@@ -7,26 +7,27 @@ import (
 	"tinyGW/app/api/service"
 	"tinyGW/app/api/types"
 	"tinyGW/pkg/plugin/response"
+	"tinyGW/pkg/service/http/middleware"
 	"tinyGW/pkg/util"
 )
 
-type device struct {
+type user struct {
 	fx.In
-	Srv service.DeviceService
+	Srv service.UserService
 }
 
-func deviceRouter(t device, r *types.ApiRouter) {
-	api := r.Group("/api")
-	api.POST("/device", t.add)
-	api.PUT("/device", t.update)
-	api.DELETE("/device/:name", t.delete)
-	api.GET("/device/:name", t.find)
-	api.GET("/devices", t.findAll)
-	api.GET("/devices/list", t.list)
+func userRouter(t user, r *types.ApiRouter) {
+	api := r.Group("/api", middleware.JWTAuth())
+	api.POST("/user", t.add)
+	api.PUT("/user", t.update)
+	api.DELETE("/user/:name", t.delete)
+	api.GET("/user/:name", t.find)
+	api.GET("/users", t.findAll)
+	api.GET("/user/list", t.list)
 }
 
-func (t *device) add(c *gin.Context) {
-	var saveReq req.DeviceReq
+func (t *user) add(c *gin.Context) {
+	var saveReq req.UserReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &saveReq)) {
 		return
 	}
@@ -34,8 +35,8 @@ func (t *device) add(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *device) update(c *gin.Context) {
-	var saveReq req.DeviceReq
+func (t *user) update(c *gin.Context) {
+	var saveReq req.UserReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &saveReq)) {
 		return
 	}
@@ -43,7 +44,7 @@ func (t *device) update(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *device) delete(c *gin.Context) {
+func (t *user) delete(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {
 		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
@@ -53,7 +54,7 @@ func (t *device) delete(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *device) find(c *gin.Context) {
+func (t *user) find(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {
 		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
@@ -63,12 +64,12 @@ func (t *device) find(c *gin.Context) {
 	response.CheckAndRespWithData(c, res, err)
 }
 
-func (t *device) findAll(c *gin.Context) {
+func (t *user) findAll(c *gin.Context) {
 	res, err := t.Srv.FindAll()
 	response.CheckAndRespWithData(c, res, err)
 }
 
-func (t *device) list(c *gin.Context) {
+func (t *user) list(c *gin.Context) {
 	var pageReq req.PageReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &pageReq)) {
 		return

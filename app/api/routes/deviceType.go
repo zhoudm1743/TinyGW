@@ -2,31 +2,40 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/cast"
 	"go.uber.org/fx"
 	"tinyGW/app/api/schemas/req"
 	"tinyGW/app/api/service"
 	"tinyGW/app/api/types"
 	"tinyGW/pkg/plugin/response"
+	"tinyGW/pkg/service/http/middleware"
 	"tinyGW/pkg/util"
 )
 
-type device struct {
+type deviceType struct {
 	fx.In
-	Srv service.DeviceService
+	Srv service.DeviceTypeService
 }
 
-func deviceRouter(t device, r *types.ApiRouter) {
-	api := r.Group("/api")
-	api.POST("/device", t.add)
-	api.PUT("/device", t.update)
-	api.DELETE("/device/:name", t.delete)
-	api.GET("/device/:name", t.find)
-	api.GET("/devices", t.findAll)
-	api.GET("/devices/list", t.list)
+func deviceTypeRouter(t deviceType, r *types.ApiRouter) {
+	api := r.Group("/api", middleware.JWTAuth())
+	api.POST("/device-type", t.add)
+	api.PUT("/device-type", t.update)
+	api.DELETE("/device-type/:name", t.delete)
+	api.GET("/device-type/:name", t.find)
+	api.GET("/device-types", t.findAll)
+	api.GET("/device-type/list", t.list)
+
+	// id为设备类型id，propertyId为属性id
+	api.POST("/device-property/:name", t.addProperties)
+	api.PUT("/device-property/:name/:propertyid", t.updateProperties)
+	api.DELETE("/device-property/:name/:propertyid", t.deleteProperties)
+	api.GET("/device-property/:name/:propertyid", t.findProperty)
+	api.GET("/device-property/:name", t.findAllProperties)
 }
 
-func (t *device) add(c *gin.Context) {
-	var saveReq req.DeviceReq
+func (t *deviceType) add(c *gin.Context) {
+	var saveReq req.DeviceTypeReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &saveReq)) {
 		return
 	}
@@ -34,8 +43,8 @@ func (t *device) add(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *device) update(c *gin.Context) {
-	var saveReq req.DeviceReq
+func (t *deviceType) update(c *gin.Context) {
+	var saveReq req.DeviceTypeReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &saveReq)) {
 		return
 	}
@@ -43,7 +52,7 @@ func (t *device) update(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *device) delete(c *gin.Context) {
+func (t *deviceType) delete(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {
 		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
@@ -53,7 +62,7 @@ func (t *device) delete(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *device) find(c *gin.Context) {
+func (t *deviceType) find(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {
 		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
@@ -63,16 +72,89 @@ func (t *device) find(c *gin.Context) {
 	response.CheckAndRespWithData(c, res, err)
 }
 
-func (t *device) findAll(c *gin.Context) {
+func (t *deviceType) findAll(c *gin.Context) {
 	res, err := t.Srv.FindAll()
 	response.CheckAndRespWithData(c, res, err)
 }
 
-func (t *device) list(c *gin.Context) {
+func (t *deviceType) list(c *gin.Context) {
 	var pageReq req.PageReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &pageReq)) {
 		return
 	}
 	res, err := t.Srv.List(&pageReq)
+	response.CheckAndRespWithData(c, res, err)
+}
+
+func (t *deviceType) addProperties(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	var dpReq req.DeviceProperty
+	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &dpReq)) {
+		return
+	}
+	err := t.Srv.AddProperties(name, &dpReq)
+	response.CheckAndResp(c, err)
+}
+
+func (t *deviceType) updateProperties(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	propertyId := c.Param("propertyid")
+	if propertyId == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "propertyid不能为空")
+		return
+	}
+	var dpReq req.DeviceProperty
+	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &dpReq)) {
+		return
+	}
+	err := t.Srv.UpdateProperties(name, cast.ToInt(propertyId), &dpReq)
+	response.CheckAndResp(c, err)
+}
+
+func (t *deviceType) deleteProperties(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	propertyId := c.Param("propertyid")
+	if propertyId == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "propertyid不能为空")
+		return
+	}
+	err := t.Srv.DeleteProperties(name, cast.ToInt(propertyId))
+	response.CheckAndResp(c, err)
+}
+
+func (t *deviceType) findProperty(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	propertyId := c.Param("propertyid")
+	if propertyId == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "propertyid不能为空")
+		return
+	}
+	res, err := t.Srv.FindProperty(name, cast.ToInt(propertyId))
+	response.CheckAndRespWithData(c, res, err)
+}
+
+func (t *deviceType) findAllProperties(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	res, err := t.Srv.FindAllProperties(name)
 	response.CheckAndRespWithData(c, res, err)
 }

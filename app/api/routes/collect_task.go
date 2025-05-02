@@ -7,26 +7,27 @@ import (
 	"tinyGW/app/api/service"
 	"tinyGW/app/api/types"
 	"tinyGW/pkg/plugin/response"
+	"tinyGW/pkg/service/http/middleware"
 	"tinyGW/pkg/util"
 )
 
-type collector struct {
+type collectTask struct {
 	fx.In
-	Srv service.CollectorService
+	Srv service.CollectTaskService
 }
 
-func collectorRouter(t collector, r *types.ApiRouter) {
-	api := r.Group("/api")
-	api.POST("/collector", t.add)
-	api.PUT("/collector", t.update)
-	api.DELETE("/collector/:name", t.delete)
-	api.GET("/collector/:name", t.find)
-	api.GET("/collectors", t.findAll)
-	api.GET("/collectors/list", t.list)
+func collectTaskRouter(t collectTask, r *types.ApiRouter) {
+	api := r.Group("/api", middleware.JWTAuth())
+	api.POST("/collect-task", t.add)
+	api.PUT("/collect-task", t.update)
+	api.DELETE("/collect-task/:name", t.delete)
+	api.GET("/collect-task/:name", t.find)
+	api.GET("/collect-tasks", t.findAll)
+	api.GET("/collect-task/list", t.list)
 }
 
-func (t *collector) add(c *gin.Context) {
-	var saveReq req.CollectorSaveReq
+func (t *collectTask) add(c *gin.Context) {
+	var saveReq req.CollectTaskReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &saveReq)) {
 		return
 	}
@@ -34,8 +35,8 @@ func (t *collector) add(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *collector) update(c *gin.Context) {
-	var saveReq req.CollectorSaveReq
+func (t *collectTask) update(c *gin.Context) {
+	var saveReq req.CollectTaskReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &saveReq)) {
 		return
 	}
@@ -43,7 +44,7 @@ func (t *collector) update(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *collector) delete(c *gin.Context) {
+func (t *collectTask) delete(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {
 		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
@@ -53,7 +54,7 @@ func (t *collector) delete(c *gin.Context) {
 	response.CheckAndResp(c, err)
 }
 
-func (t *collector) find(c *gin.Context) {
+func (t *collectTask) find(c *gin.Context) {
 	name := c.Param("name")
 	if name == "" {
 		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
@@ -63,12 +64,12 @@ func (t *collector) find(c *gin.Context) {
 	response.CheckAndRespWithData(c, res, err)
 }
 
-func (t *collector) findAll(c *gin.Context) {
+func (t *collectTask) findAll(c *gin.Context) {
 	res, err := t.Srv.FindAll()
 	response.CheckAndRespWithData(c, res, err)
 }
 
-func (t *collector) list(c *gin.Context) {
+func (t *collectTask) list(c *gin.Context) {
 	var pageReq req.PageReq
 	if response.IsFailWithResp(c, util.VerifyUtil.Verify(c, &pageReq)) {
 		return

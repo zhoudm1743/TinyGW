@@ -2,17 +2,17 @@ package collector
 
 import (
 	"go.uber.org/zap"
-	"zsxagw/api/domain"
-	"zsxagw/core/io"
-	"zsxagw/core/subscription"
+	"tinyGW/app/models"
+	"tinyGW/pkg/plugin/io"
+	"tinyGW/pkg/service/subscription"
 )
 
 // MqttCollector is the collector for MQTT
 type MqttCollector struct {
-	domain.Collector
+	models.Collector
 }
 
-func (t MqttCollector) Open(device *domain.Device) bool {
+func (t MqttCollector) Open(device *models.Device) bool {
 	return true
 }
 

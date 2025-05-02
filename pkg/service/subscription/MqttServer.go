@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
-	"github.com/gookit/color"
+	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"math/rand"
 	"strings"
 	"time"
-	"zsxagw/core/config"
-	"zsxagw/core/io"
+	"tinyGW/pkg/plugin/io"
+	"tinyGW/pkg/service/conf"
 )
 
 type Server struct {
@@ -18,40 +18,43 @@ type Server struct {
 	stop   chan bool
 }
 
-var Mclient Server
+var Mclient *Server
 
-func InitMqttServer(config *config.Config) {
-
+func InitMqttServer(config *conf.Config) *Server {
 	subscribeOptions := mqtt.NewClientOptions()
-	subscribeOptions.AddBroker(config.Subscribe.Ip + ":" + config.Subscribe.Port)
+	uri := fmt.Sprintf("%s:%d", config.Subscribe.Host, config.Subscribe.Port)
+	subscribeOptions.AddBroker(uri)
 	subscribeOptions.SetUsername(config.Subscribe.Username)
 	subscribeOptions.SetPassword(config.Subscribe.Password)
-	subscribeOptions.SetClientID(config.ClientID + generateClientID())
-	zap.S().Info("订阅采集器服务器配置：", config.Subscribe.Ip+":"+config.Subscribe.Port)
+	subscribeOptions.SetClientID(config.Cloud.ClientId + generateClientID())
+	zap.S().Infoln("订阅采集器服务器配置：", uri)
 
 	subscribeOptions.SetAutoReconnect(false)
+	subscribeOptions.SetKeepAlive(60 * time.Second)
+	subscribeOptions.SetPingTimeout(10 * time.Second)
 	subscribeOptions.SetOnConnectHandler(onConnectHandler)
 	subscribeOptions.SetConnectionLostHandler(connectionLostHandler)
 	subscribeOptions.SetReconnectingHandler(reconnectingHandler)
 
-	Mclient = Server{
+	Mclient = &Server{
 		client: mqtt.NewClient(subscribeOptions),
 		stop:   make(chan bool, 1),
 	}
-	return
+	return Mclient
 }
 
 // Connect 连接服务器
 func (mc *Server) Connect() {
+	zap.S().Infoln("开始连接订阅服务器...")
 	go func() {
 		for {
 			select {
 			case <-mc.stop:
-				zap.S().Info("连接线程停止工作！")
+				zap.S().Infoln("连接线程停止工作！")
 				return
 			default:
 				if !mc.client.IsConnected() {
-					zap.S().Info("网络断开，尝试重连...")
+					zap.S().Infoln("网络断开，尝试重连...")
 					if token := mc.client.Connect(); token.Wait() && token.Error() != nil {
 						zap.S().Error("MqttClient：尝试连接失败！")
 					}
@@ -62,9 +65,9 @@ func (mc *Server) Connect() {
 	}()
 }
 
-// Discount 断开服务器连接
-func (mc *Server) Discount() {
-	zap.S().Info("MServer.Disconnect 关闭服务器连接！")
+// Disconnect 断开服务器连接
+func (mc *Server) Disconnect() {
+	zap.S().Error("MServer.Disconnect 关闭服务器连接！")
 	mc.stop <- true
 	mc.client.Disconnect(0)
 }
@@ -123,10 +126,10 @@ func (mc *Server) onSubscriptionHandler(client mqtt.Client, message mqtt.Message
 	var register registerRequest
 	err := json.Unmarshal(message.Payload(), &register)
 	if err == nil {
-		color.Blueln("收到注册消息：", register.String())
+		zap.S().Infoln("收到注册消息：", register.String())
 		return
 	}
-	color.Greenln(fmt.Sprintf("收到[%s]消息：[% X]", clientID, message.Payload()))
+	zap.S().Infoln(fmt.Sprintf("收到[%s]消息：[% X]", clientID, message.Payload()))
 
 	// 处理消息
 	io.IConcurrentMap.Set(clientID, message.Payload())
@@ -142,3 +145,7 @@ func generateClientID() string {
 	}
 	return "_" + string(clientid)
 }
+
+var Module = fx.Provide(
+	InitMqttServer,
+)

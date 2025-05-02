@@ -14,6 +14,7 @@ type (
 		CmdName    string      `json:"cmdName"`             // 命令名
 		CmdStatus  int         `json:"cmdStatus"`           // 命令状态   返回值？
 		CmdResult  interface{} `json:"cmdResult,omitempty"` // 命令结果
+		Err        string      `json:"err,omitempty"`       // 错误信息
 	}
 )
 

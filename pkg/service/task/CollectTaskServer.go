@@ -4,9 +4,10 @@ import (
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"sync"
-	"zsxagw/api/domain"
-	"zsxagw/api/repository"
-	"zsxagw/core/collect"
+	"tinyGW/app/api/repository"
+	"tinyGW/app/models"
+	"tinyGW/pkg/service/collect"
+	"tinyGW/pkg/service/event"
 )
 
 type (
@@ -28,17 +29,32 @@ func NewCollectTaskServer(collectorServer *collect.CollectorServer, deviceReposi
 }
 
 // InitCollectTaskServer 初始化
-func InitCollectTaskServer(collectTaskServer *CollectTaskServer, repository repository.CollectTaskRepository) {
+func InitCollectTaskServer(collectTaskServer *CollectTaskServer, repository repository.CollectTaskRepository, e *event.EventService) {
 	zap.S().Info("初始化采集定时任务")
 	if tasks, err := repository.FindAll(); err == nil {
 		for _, task := range tasks {
 			collectTaskServer.Add(&task)
 		}
 	}
+	e.Subscribe("CollectTask_Add", func(e event.Event) {
+		zap.S().Info("新增采集定时任务", e.Data)
+		task := e.Data.(*models.CollectTask)
+		collectTaskServer.Add(task)
+	})
+	e.Subscribe("CollectTask_Delete", func(e event.Event) {
+		zap.S().Info("删除采集定时任务", e.Data)
+		name := e.Data.(string)
+		collectTaskServer.Delete(name)
+	})
+	e.Subscribe("CollectTask_Update", func(e event.Event) {
+		zap.S().Info("修改采集定时任务", e.Data)
+		task := e.Data.(*models.CollectTask)
+		collectTaskServer.Update(task)
+	})
 }
 
 // Add 新增定时任务，如果定时任务是开启状态，则开启定时任务
-func (cts *CollectTaskServer) Add(task *domain.CollectTask) {
+func (cts *CollectTaskServer) Add(task *models.CollectTask) {
 	zap.S().Info("新增定时任务", task)
 	c := cron.New()
 	c.AddFunc(task.Cron, cts.Collect)
@@ -60,13 +76,13 @@ func (cts *CollectTaskServer) Delete(name string) {
 }
 
 // Update 修改定时任务，删除存在的定时任务，同时增加一个新的定时任务
-func (cts *CollectTaskServer) Update(task *domain.CollectTask) {
+func (cts *CollectTaskServer) Update(task *models.CollectTask) {
 	cts.Delete(task.Name)
 	cts.Add(task)
 }
 
 // Start 启动定时任务
-func (cts *CollectTaskServer) Start(task *domain.CollectTask) {
+func (cts *CollectTaskServer) Start(task *models.CollectTask) {
 	zap.S().Info("启动定时任务", task)
 	if value, loaded := cts.tasks.Load(task.Name); loaded {
 		c := value.(*cron.Cron)
@@ -75,7 +91,7 @@ func (cts *CollectTaskServer) Start(task *domain.CollectTask) {
 }
 
 // Stop 停止定时任务
-func (cts *CollectTaskServer) Stop(task *domain.CollectTask) {
+func (cts *CollectTaskServer) Stop(task *models.CollectTask) {
 	zap.S().Info("停止定时任务", task)
 	if value, loaded := cts.tasks.Load(task.Name); loaded {
 		c := value.(*cron.Cron)

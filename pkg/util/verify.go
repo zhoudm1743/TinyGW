@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"io/ioutil"
 	"mime/multipart"
-	"zsxagw/core/response"
+	"tinyGW/pkg/plugin/response"
 )
 
 var VerifyUtil = verifyUtil{}
@@ -65,6 +65,25 @@ func (vu verifyUtil) VerifyFile(c *gin.Context, name string) (file *multipart.Fi
 	if err != nil {
 		e = response.ParamsValidError.MakeData(err.Error())
 		return
+	}
+	return
+}
+
+// VerifyData 验证请求数据
+func (vu verifyUtil) Verify(c *gin.Context, obj ...any) (e error) {
+	for _, o := range obj {
+		switch c.Request.Method {
+		case "POST":
+			return VerifyUtil.VerifyJSON(c, o)
+		case "GET":
+			return VerifyUtil.VerifyQuery(c, o)
+		case "PUT":
+			return VerifyUtil.VerifyJSON(c, o)
+		case "DELETE":
+			return VerifyUtil.VerifyQuery(c, o)
+		default:
+			return response.ParamsValidError.MakeData("请求方式错误")
+		}
 	}
 	return
 }

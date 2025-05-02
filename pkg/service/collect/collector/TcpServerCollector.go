@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"go.uber.org/zap"
 	"net"
-	"zsxagw/api/domain"
-	"zsxagw/core/listener"
+	"tinyGW/app/models"
+	"tinyGW/pkg/service/listener"
 )
 
 // TcpServerCollector 【网口采集器】，用于网桥设备
 type TcpServerCollector struct {
-	domain.Collector
+	models.Collector
 }
 
-func (t TcpServerCollector) Open(device *domain.Device) bool {
+func (t TcpServerCollector) Open(device *models.Device) bool {
 	//TODO implement me
 	return t.check() != nil
 }

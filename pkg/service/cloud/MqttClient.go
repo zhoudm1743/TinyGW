@@ -1,17 +1,17 @@
-package mqtt
+package cloud
 
 import (
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
-	"github.com/gookit/color"
+	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"strconv"
 	"strings"
 	"time"
-	"zsxagw/api/repository"
-	"zsxagw/core/collect"
-	"zsxagw/core/collect/worker"
-	"zsxagw/core/config"
+	"tinyGW/app/api/repository"
+	"tinyGW/pkg/service/collect"
+	"tinyGW/pkg/service/collect/worker"
+	"tinyGW/pkg/service/conf"
 )
 
 type (
@@ -26,7 +26,8 @@ type (
 	}
 )
 
-var MClient Client
+var MClient *Client
+var clientId = conf.NewConfig().Cloud.ClientId
 
 func InitMqttClient(
 	repository repository.ReportTaskRepository,
@@ -34,16 +35,13 @@ func InitMqttClient(
 	deviceRepository repository.DeviceRepository,
 	collectorRepository repository.CollectorRepository,
 	deviceTypeRepository repository.DeviceTypeRepository,
-) {
+) *Client {
 	zap.S().Info("实例化Mqtt Client")
-
-	// 确保上报任务有一条数据
-	repository.Migrate()
 
 	reportTask, err := repository.Find("数据上报")
 	if err != nil {
 		zap.S().Error("没找到上报服务中的【数据上报】那条记录，没有实例化mqtt client.")
-		return
+		return nil
 	}
 
 	clientOptions := mqtt.NewClientOptions()
@@ -59,12 +57,13 @@ func InitMqttClient(
 
 	// 不使用短线重连机制，自己开线程检测系统在线情况
 	clientOptions.SetAutoReconnect(false)
-
+	clientOptions.SetKeepAlive(60 * time.Second)
+	clientOptions.SetPingTimeout(10 * time.Second)
 	clientOptions.SetOnConnectHandler(onConnectHandler)
 	clientOptions.SetConnectionLostHandler(connectionLostHandler)
 	clientOptions.SetReconnectingHandler(reconnectingHandler)
 
-	MClient = Client{
+	MClient = &Client{
 		client:               mqtt.NewClient(clientOptions),
 		collectorServer:      collectorServer,
 		deviceRepository:     deviceRepository,
@@ -72,7 +71,10 @@ func InitMqttClient(
 		deviceTypeRepository: deviceTypeRepository,
 		stop:                 make(chan bool, 1),
 	}
+	return MClient
 }
+
+var Module = fx.Provide(InitMqttClient)
 
 // Connect 连接服务器
 func (mc *Client) Connect() {
@@ -95,10 +97,10 @@ func (mc *Client) Connect() {
 	}()
 }
 
-// Discount 断开服务器连接
-func (mc *Client) Discount() {
+// Disconnect 断开服务器连接
+func (mc *Client) Disconnect() {
 	zap.S().Info("MClient.Disconnect 关闭服务器连接！")
-	online := fmt.Sprintf(`{"online":false,"ts":%d,"name":"%s"}`, time.Now().Unix(), config.NewConfig().ClientID)
+	online := fmt.Sprintf(`{"online":false,"ts":%d,"name":"%s"}`, time.Now().Unix(), clientId)
 	if token := mc.client.Publish("v1/devices/me/telemetry", 0, false, online); token.Wait() && token.Error() != nil {
 		zap.S().Error("上传网关状态！")
 	}
@@ -127,8 +129,8 @@ func onConnectHandler(client mqtt.Client) {
 	}
 	zap.S().Info("onConnectHandler: Mqtt Client 链接成功并且订阅RPC主题.")
 	// 检测是否有断线缓存数据，如果有就提交，并删除缓存数据
-	online := fmt.Sprintf(`{"online":true,"ts":%d,"name":"%s"}`, time.Now().Unix(), config.NewConfig().ClientID)
-	color.Blueln("上报数据：" + online)
+	online := fmt.Sprintf(`{"online":true,"ts":%d,"name":"%s"}`, time.Now().Unix(), clientId)
+	zap.S().Infoln("上报数据：" + online)
 	if token := client.Publish("v1/devices/me/telemetry", 0, false, online); token.Wait() && token.Error() != nil {
 		zap.S().Error("上传网关状态！")
 		// 存盘返回
@@ -146,11 +148,9 @@ func reconnectingHandler(client mqtt.Client, opt *mqtt.ClientOptions) {
 }
 
 func (mc *Client) receiveMessageHandler(client mqtt.Client, msg mqtt.Message) {
-	clientId := config.NewConfig().ClientID
-	zap.S().Infof("收到RPC命令：【%s】,正在解析...", msg.Topic())
+	//zap.S().Infof("收到RPC命令：【%s】,正在解析...", msg.Topic())
 	// 0. 不是订阅的设备rpc请求，则返回
 	if !strings.Contains(msg.Topic(), "v1/devices/me/rpc/request/") {
-		zap.S().Errorf("receiveMessageHandler: 接收到意外主题：%s", msg.Topic())
 		return
 	}
 
@@ -163,57 +163,63 @@ func (mc *Client) receiveMessageHandler(client mqtt.Client, msg mqtt.Message) {
 
 	// 判断是否请求本设备
 	if commandRequest.Params[0].ClientID != "any" && commandRequest.Params[0].ClientID != clientId {
-		zap.S().Errorf("receiveMessageHandler: 不是本设备的RPC命令：%s", msg.Topic())
 		return
 	}
-
-	// 2. 获取请求ID
-	commandRequest.RequestID = ""
-	topicToken := strings.Split(msg.Topic(), "/")
-	if len(topicToken) == 6 {
-		commandRequest.RequestID = topicToken[5]
-	}
-	if commandRequest.RequestID == "" {
-		zap.S().Errorf("主题中不包含请求ID：%s", msg.Topic())
-		return
-	}
-
 	// 3. 处理命令 ...
-	commandResponse := worker.ResponseParam{
-		ClientID: clientId,
-		CmdName:  commandRequest.Params[0].CmdName,
-	}
+	go func() {
+		commandRequest.RequestID = ""
+		topicToken := strings.Split(msg.Topic(), "/")
+		if len(topicToken) == 6 {
+			commandRequest.RequestID = topicToken[5]
+		}
+		if commandRequest.RequestID == "" {
+			zap.S().Errorf("主题中不包含请求ID：%s", msg.Topic())
+			return
+		}
 
-	switch strings.ToLower(commandRequest.Method) {
-	case "gateway":
-		command, ok := GatewayCommand[commandRequest.Params[0].CmdName]
-		if ok {
-			status, devs := command(commandRequest.Params[0].CmdParams, *mc)
-			commandResponse.CmdStatus = status
-			commandResponse.CmdResult = devs
-			mc.SendResponse(commandRequest, commandResponse)
-		} else {
-			commandResponse.CmdStatus = 1
-			commandResponse.CmdResult = "不支持gateway." + commandResponse.CmdName + "命令"
+		commandResponse := worker.ResponseParam{
+			ClientID: clientId,
+			CmdName:  commandRequest.Params[0].CmdName,
 		}
-	case "device":
-		// 处理设备操作
-		// 1. 回调函数
-		commandRequest.ResponseParamChan = make(chan worker.ResponseParam, 1)
-		if len(commandRequest.Params) < 1 {
-			zap.S().Error("对设备的RPC操作缺少请求参数params")
-			break
-		}
-		deviceName := commandRequest.Params[0].DeviceName
-		if work, ok := mc.collectorServer.FindByDeviceName(deviceName); ok {
-			work.CommandTask(commandRequest)
 
-			responseParam := <-commandRequest.ResponseParamChan
-			mc.SendResponse(commandRequest, responseParam)
+		switch strings.ToLower(commandRequest.Method) {
+		case "gateway":
+			command, ok := GatewayCommand[commandRequest.Params[0].CmdName]
+			if ok {
+				status, devs := command(commandRequest.Params[0].CmdParams, *mc)
+				commandResponse.CmdStatus = status
+				commandResponse.CmdResult = devs
+				mc.SendResponse(commandRequest, commandResponse)
+			} else {
+				commandResponse.CmdStatus = 1
+				commandResponse.CmdResult = "不支持gateway." + commandResponse.CmdName + "命令"
+			}
+		case "instrument":
+			commandRequest.ResponseParamChan = make(chan worker.ResponseParam, 1)
+			if len(commandRequest.Params) < 1 {
+				zap.S().Error("对设备的RPC操作缺少请求参数params")
+				break
+			}
+
+			deviceName := commandRequest.Params[0].DeviceName
+			work, ok := mc.collectorServer.FindByDeviceName(deviceName)
+			if ok {
+				work.CommandTask(commandRequest)
+				responseParam := <-commandRequest.ResponseParamChan
+				mc.SendResponse(commandRequest, responseParam)
+			} else {
+				commandResponse.DeviceName = deviceName
+				commandResponse.CmdStatus = 1
+				commandResponse.Err = fmt.Sprintf("网关[%s]不存在采集器：%s, 请同步网关和采集器配置.", clientId, deviceName)
+				mc.SendResponse(commandRequest, commandResponse)
+			}
+
+			// color.Cyanln("设备操作请求处理完毕.")
+		default:
+			zap.S().Error("无效的方法：", commandRequest.Method)
 		}
-	default:
-		zap.S().Error("无效的方法：", commandRequest.Method)
-	}
+	}()
+
 }
 
 func (mc *Client) SendResponse(request worker.CommandRequest, response worker.ResponseParam) {

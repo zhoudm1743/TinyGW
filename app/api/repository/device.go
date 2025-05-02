@@ -1,60 +1,121 @@
 package repository
 
 import (
-	"fmt"
+	"errors"
+	"github.com/gookit/color"
 	"gorm.io/gorm"
 	"tinyGW/app/models"
 )
 
-type CollectorRepository interface {
-	Save(collector *models.Collector) error
+type DeviceRepository interface {
+	Save(device *models.Device) error
 	Delete(name string) error
-	Find(name string) (*models.Collector, error)
-	FindAll() ([]models.Collector, error)
+	Find(name string) (models.Device, error)
+	FindAll() ([]models.Device, error)
+	List(limit int, offset int) ([]models.Device, int64, error)
+
+	CollectorIsUsed(collector *models.Collector) bool    // 是否引用了采集接口
+	DeviceTypeIsUsed(deviceType *models.DeviceType) bool // 是否引用了设备类型
+	CollectorChanged(collector models.Collector)         // 采集接口改变了，同步更新设备列表
+	DeviceTypeChanged(deviceType models.DeviceType)      // 设备类型改变了，同步更新设备列表
 }
 
-type collectorRepository struct {
+type deviceRepository struct {
 	db *gorm.DB
 }
 
-func (c collectorRepository) Save(collector *models.Collector) error {
+func (c deviceRepository) CollectorIsUsed(collector *models.Collector) bool {
+	if devices, err := c.FindAll(); err == nil {
+		for _, device := range devices {
+			if device.Collector.Name == collector.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (c deviceRepository) DeviceTypeIsUsed(deviceType *models.DeviceType) bool {
+	if devices, err := c.FindAll(); err == nil {
+		for _, device := range devices {
+			if device.Type.Name == deviceType.Name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (c deviceRepository) CollectorChanged(collector models.Collector) {
+	if devices, err := c.FindAll(); err == nil {
+		for _, device := range devices {
+			if device.Collector.Name == collector.Name {
+				device.Collector = &collector
+				c.Save(&device)
+			}
+		}
+	}
+}
+
+func (c deviceRepository) DeviceTypeChanged(deviceType models.DeviceType) {
+	if devices, err := c.FindAll(); err == nil {
+		for _, device := range devices {
+			if device.Type.Name == deviceType.Name {
+				device.Type = &deviceType
+				c.Save(&device)
+			}
+		}
+	}
+}
+
+func (c deviceRepository) Save(device *models.Device) error {
 	var err error
-	var task models.Collector
-	c.db.Where("name = ?", collector.Name).First(&task)
-	if task.ID != 0 {
-		err = c.db.Model(&task).Save(&collector).Error
-		return err
-	} else {
-		err = c.db.Create(collector).Error
-		return err
+	var task models.Device
+	if err = c.db.Where("name = ?", device.Name).First(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = c.db.Create(device).Error
+			return err
+		}
 	}
+	err = c.db.Model(&task).Where("name = ?", device.Name).Updates(device).Error
+	return err
 }
 
-func (c collectorRepository) Delete(name string) error {
-	return c.db.Delete(&models.Collector{}, "name = ?", name).Error
+func (c deviceRepository) Delete(name string) error {
+	return c.db.Delete(&models.Device{}, "name = ?", name).Error
 }
 
-func (c collectorRepository) Find(name string) (*models.Collector, error) {
-	var collector models.Collector
-	c.db.Where("name =?", name).First(&collector)
-	if collector.ID == 0 {
-		return nil, fmt.Errorf("collect task not found")
-	}
-	return &collector, nil
+func (c deviceRepository) Find(name string) (models.Device, error) {
+	var device models.Device
+	err := c.db.Where("name = ?", name).First(&device).Error
+	return device, err
 }
 
-func (c collectorRepository) FindAll() ([]models.Collector, error) {
-	var collectors []models.Collector
-	err := c.db.Find(&collectors).Error
+func (c deviceRepository) FindAll() ([]models.Device, error) {
+	var devices []models.Device
+	err := c.db.Find(&devices).Error
 	if err != nil {
 		return nil, err
 	}
-	return collectors, nil
+	return devices, nil
 }
 
-func NewCollectorRepository(db *gorm.DB) CollectorRepository {
-	db.AutoMigrate(&models.Collector{})
-	return &collectorRepository{
+func (c deviceRepository) List(limit int, offset int) ([]models.Device, int64, error) {
+	var devices []models.Device
+	var count int64
+	c.db.Model(&models.Device{}).Count(&count)
+	err := c.db.Model(&models.Device{}).Limit(limit).Offset(offset).Find(&devices).Error
+	if err != nil {
+		return nil, 0, err
+	}
+	color.Infoln("count:", count)
+	color.Infoln("devices:", devices)
+	return devices, count, nil
+}
+
+func NewDeviceRepository(db *gorm.DB) DeviceRepository {
+	db.AutoMigrate(&models.Device{})
+	return &deviceRepository{
 		db: db,
 	}
 }

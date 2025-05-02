@@ -1,12 +1,9 @@
 package response
 
 import (
-	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/copier"
-	"github.com/qiniu/qmgo"
 	"net/http"
-	"seven-admin/core"
 	"strconv"
 )
 
@@ -37,6 +34,7 @@ var (
 	LoginDisableError = RespType{code: 331, msg: "登录账号已被禁用了"}
 	TokenEmpty        = RespType{code: 332, msg: "token参数为空"}
 	TokenInvalid      = RespType{code: 333, msg: "token参数无效"}
+	TokenExpired      = RespType{code: 334, msg: "token已过期"}
 
 	TenantDisableOrExpired = RespType{code: 403, msg: "租户已被禁用或过期"}
 
@@ -98,7 +96,6 @@ func Result(c *gin.Context, resp RespType, data interface{}) {
 // Copy 拷贝结构体
 func Copy(toValue interface{}, fromValue interface{}) interface{} {
 	if err := copier.Copy(toValue, fromValue); err != nil {
-		core.Logger.Errorf("Copy err: err=[%+v]", err)
 		panic(SystemError)
 	}
 	return toValue
@@ -121,28 +118,19 @@ func OkWithData(c *gin.Context, data interface{}) {
 	Result(c, Success, data)
 }
 
-// respLogger 打印日志
-func respLogger(resp RespType, template string, args ...interface{}) {
-	loggerFunc := core.Logger.Warnf
-	loggerFunc(template, args...)
-}
-
 // Fail 错误响应
 func Fail(c *gin.Context, resp RespType) {
-	respLogger(resp, "Request Fail: url=[%s], resp=[%+v]", c.Request.URL.Path, resp)
 	Result(c, resp, []string{})
 }
 
 // FailWithMsg 错误响应附带msg
 func FailWithMsg(c *gin.Context, resp RespType, msg string) {
 	resp.msg = msg
-	respLogger(resp, "Request FailWithMsg: url=[%s], resp=[%+v]", c.Request.URL.Path, resp)
 	Result(c, resp, []string{})
 }
 
 // FailWithData 错误响应附带data
 func FailWithData(c *gin.Context, resp RespType, data interface{}) {
-	respLogger(resp, "Request FailWithData: url=[%s], resp=[%+v], data=[%+v]", c.Request.URL.Path, resp, data)
 	Result(c, resp, data)
 }
 
@@ -185,23 +173,9 @@ func CheckAndRespWithData(c *gin.Context, data interface{}, err error) {
 
 // CheckErr 校验未知错误并抛出
 func CheckErr(err error, template string, args ...interface{}) (e error) {
-	prefix := ": "
-	if len(args) > 0 {
-		prefix = " ,"
-	}
 	args = append(args, err)
 	if err != nil {
-		core.Logger.Errorf(template+prefix+"err=[%+v]", args...)
 		return SystemError
-	}
-	return
-}
-
-// CheckErrDBNotRecord 校验数据库记录不存在的错误
-func CheckErrDBNotRecord(err error, msg string) (e error) {
-	if err != nil && errors.Is(err, qmgo.ErrNoSuchDocuments) {
-		core.Logger.Infof("CheckErrDBNotRecord err: err=[%+v]", err)
-		return AssertArgumentError.Make(msg)
 	}
 	return
 }

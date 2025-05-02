@@ -10,85 +10,85 @@ import (
 	"tinyGW/pkg/service/event"
 )
 
-type CollectTaskService interface {
-	Add(addReq *req.CollectTaskReq) error
-	Update(updateReq *req.CollectTaskReq) error
+type ReportTaskService interface {
+	Add(addReq *req.ReportTaskReq) error
+	Update(updateReq *req.ReportTaskReq) error
 	Delete(name string) error
-	Find(name string) (*resp.CollectTaskResp, error)
-	FindAll() ([]*resp.CollectTaskResp, error)
+	Find(name string) (*resp.ReportTaskResp, error)
+	FindAll() ([]resp.ReportTaskResp, error)
 	List(pageReq *req.PageReq) (response.PageResp, error)
 }
 
-type collectTaskService struct {
-	repo  repository.CollectTaskRepository
+type reportTaskService struct {
+	repo  repository.ReportTaskRepository
 	event *event.EventService
 }
 
-func (c collectTaskService) Add(addReq *req.CollectTaskReq) error {
+func (c reportTaskService) Add(addReq *req.ReportTaskReq) error {
 	_, err := c.repo.Find(addReq.Name)
 	if err == nil {
 		return fmt.Errorf("采集任务名称 %s 已存在", addReq.Name)
 	}
-	var ct models.CollectTask
+	var ct models.ReportTask
 	response.Copy(&ct, addReq)
 	err = c.repo.Save(&ct)
 	if err != nil {
 		return err
 	}
 	c.event.Publish(event.Event{
-		Name: "CollectTask_Add",
+		Name: "ReportTask_Add",
 		Data: &ct,
 	})
 	return nil
 }
 
-func (c collectTaskService) Update(updateReq *req.CollectTaskReq) error {
-	var ct models.CollectTask
+func (c reportTaskService) Update(updateReq *req.ReportTaskReq) error {
+	var ct models.ReportTask
 	response.Copy(&ct, updateReq)
 	err := c.repo.Save(&ct)
 	if err != nil {
 		return fmt.Errorf("更新采集任务失败: %s", err.Error())
 	}
 	c.event.Publish(event.Event{
-		Name: "CollectTask_Update",
+		Name: "ReportTask_Update",
 		Data: &ct,
 	})
 	return nil
 }
 
-func (c collectTaskService) Delete(name string) error {
+func (c reportTaskService) Delete(name string) error {
 	err := c.repo.Delete(name)
 	if err != nil {
 		return fmt.Errorf("删除采集任务失败: %s", err.Error())
 	}
 	c.event.Publish(event.Event{
-		Name: "CollectTask_Delete",
+		Name: "ReportTask_Delete",
 		Data: name,
 	})
 	return nil
 }
 
-func (c collectTaskService) Find(name string) (*resp.CollectTaskResp, error) {
+func (c reportTaskService) Find(name string) (*resp.ReportTaskResp, error) {
 	find, err := c.repo.Find(name)
 	if err != nil {
 		return nil, fmt.Errorf("查询采集任务失败: %s", err.Error())
 	}
-	var resp resp.CollectTaskResp
+	var resp resp.ReportTaskResp
 	response.Copy(&resp, find)
 	return &resp, nil
 }
 
-func (c collectTaskService) FindAll() ([]*resp.CollectTaskResp, error) {
+func (c reportTaskService) FindAll() ([]resp.ReportTaskResp, error) {
 	findAll, err := c.repo.FindAll()
 	if err != nil {
 		return nil, fmt.Errorf("查询所有采集任务失败: %s", err.Error())
 	}
-	var resps []*resp.CollectTaskResp
+	var resps []resp.ReportTaskResp
 	response.Copy(&resps, findAll)
 	return resps, nil
 }
 
-func (c collectTaskService) List(page *req.PageReq) (response.PageResp, error) {
+func (c reportTaskService) List(page *req.PageReq) (response.PageResp, error) {
 	limit := page.PageSize
 	offset := page.PageSize * (page.PageNo - 1)
 	list, count, err := c.repo.List(limit, offset)
@@ -103,8 +103,8 @@ func (c collectTaskService) List(page *req.PageReq) (response.PageResp, error) {
 	}, nil
 }
 
-func NewCollectTaskService(repo repository.CollectTaskRepository, event *event.EventService) CollectTaskService {
-	return &collectTaskService{
+func NewReportTaskService(repo repository.ReportTaskRepository, event *event.EventService) ReportTaskService {
+	return &reportTaskService{
 		repo:  repo,
 		event: event,
 	}

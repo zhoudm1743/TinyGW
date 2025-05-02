@@ -8,68 +8,68 @@ import (
 	"tinyGW/pkg/plugin/response"
 )
 
-type DeviceService interface {
-	Add(device *req.DeviceReq) error
-	Update(device *req.DeviceReq) error
+type UserService interface {
+	Add(user *req.UserReq) error
+	Update(user *req.UserReq) error
 	Delete(name string) error
-	Find(name string) (req.DeviceReq, error)
-	FindAll() ([]req.DeviceReq, error)
+	Find(name string) (req.UserReq, error)
+	FindAll() ([]req.UserReq, error)
 	List(page *req.PageReq) (response.PageResp, error)
 }
 
-type deviceService struct {
-	deviceRepo repository.DeviceRepository
+type userService struct {
+	userRepo repository.UserRepository
 }
 
-func (d deviceService) Add(device *req.DeviceReq) error {
-	_, err := d.deviceRepo.Find(device.Name)
+func (d userService) Add(user *req.UserReq) error {
+	_, err := d.userRepo.Find(user.Username)
 	if err == nil {
-		return fmt.Errorf("仪表 %s <UNK>", device.Name)
+		return fmt.Errorf("用户 %s <UNK>", user.Username)
 	}
-	var dv models.Device
-	response.Copy(&dv, device)
-	return d.deviceRepo.Save(&dv)
+	var dv models.User
+	response.Copy(&dv, user)
+	return d.userRepo.Save(&dv)
 }
 
-func (d deviceService) Update(device *req.DeviceReq) error {
-	var dv models.Device
-	response.Copy(&dv, device)
-	return d.deviceRepo.Save(&dv)
+func (d userService) Update(user *req.UserReq) error {
+	var dv models.User
+	response.Copy(&dv, user)
+	return d.userRepo.Save(&dv)
 }
 
-func (d deviceService) Delete(name string) error {
-	return d.deviceRepo.Delete(name)
+func (d userService) Delete(name string) error {
+	return d.userRepo.Delete(name)
 }
 
-func (d deviceService) Find(name string) (req.DeviceReq, error) {
-	f, err := d.deviceRepo.Find(name)
+func (d userService) Find(name string) (req.UserReq, error) {
+	f, err := d.userRepo.Find(name)
 	if err != nil {
-		return req.DeviceReq{}, fmt.Errorf("仪表 %s 不存在", name)
+		return req.UserReq{}, fmt.Errorf("用户 %s 不存在", name)
 	}
-	var device req.DeviceReq
-	response.Copy(&device, f)
-	return device, nil
+	var user req.UserReq
+	response.Copy(&user, f)
+	return user, nil
 }
 
-func (d deviceService) FindAll() ([]req.DeviceReq, error) {
-	fs, err := d.deviceRepo.FindAll()
+func (d userService) FindAll() ([]req.UserReq, error) {
+	fs, err := d.userRepo.FindAll()
 	if err != nil {
 		return nil, err
 	}
-	var devices []req.DeviceReq
-	response.Copy(&devices, fs)
-	return devices, nil
+	var users []req.UserReq
+	response.Copy(&users, fs)
+	return users, nil
 }
 
-func (d deviceService) List(page *req.PageReq) (response.PageResp, error) {
+func (d userService) List(page *req.PageReq) (response.PageResp, error) {
 	limit := page.PageSize
 	offset := page.PageSize * (page.PageNo - 1)
-	list, total, err := d.deviceRepo.List(offset, limit)
+	list, total, err := d.userRepo.List(limit, offset)
 	if err != nil {
 		return response.PageResp{}, err
 	}
-	var devices []req.DeviceReq
-	response.Copy(&devices, list)
+	var users []req.UserReq
+	response.Copy(&users, list)
 	return response.PageResp{
 		Count:    total,
 		PageNo:   page.PageNo,
@@ -78,8 +78,8 @@ func (d deviceService) List(page *req.PageReq) (response.PageResp, error) {
 	}, nil
 }
 
-func NewDeviceService(deviceRepo repository.DeviceRepository) DeviceService {
-	return &deviceService{
-		deviceRepo: deviceRepo,
+func NewUserService(userRepo repository.UserRepository) UserService {
+	return &userService{
+		userRepo: userRepo,
 	}
 }

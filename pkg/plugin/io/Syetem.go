@@ -1,7 +1,6 @@
 package io
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/mem"
@@ -11,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"zsxagw/api/domain"
 )
 
 type SystemStateTemplate struct {
@@ -80,13 +78,13 @@ func GetRuntime() {
 }
 
 func SystemReboot() {
-	cmd := exec.Command("reboot")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	_ = cmd.Start()
-
-	str := out.String()
-	fmt.Println(str)
+	//cmd := exec.Command("reboot")
+	//var out bytes.Buffer
+	//cmd.Stdout = &out
+	//_ = cmd.Start()
+	//
+	//str := out.String()
+	panic("reboot")
 }
 
 func OsCommand(cmd string) string {
@@ -107,36 +105,4 @@ func OsCommandSilent(cmd string) string {
 	//}
 	var s = strings.TrimSpace(string(result))
 	return s
-}
-
-func CmdSetStaticIP(eth *domain.Ethernet) {
-	out, err := exec.Command("/bin/sh", "-c",
-		fmt.Sprintf("ifconfig %s %s netmask %s", eth.Name, eth.ConfigIP, eth.ConfigNetmask)).Output()
-	if err != nil {
-		zap.S().Debugf("网卡[%s]设置IP[%s]Netmask[%s]失败 %s %v", eth.Name, eth.ConfigIP, eth.ConfigNetmask, string(out), err)
-	} else {
-		zap.S().Debugf("网卡[%s]设置IP[%s]Netmask[%s]成功", eth.Name, eth.ConfigIP, eth.ConfigNetmask)
-	}
-
-	out, err = exec.Command("/sbin/route", "add", "default", "gw", eth.ConfigGateway).Output()
-	if err != nil {
-		zap.S().Debugf("网卡[%s]添加默认网关[%s]失败 %s %v", eth.Name, eth.ConfigGateway, string(out), err)
-		return
-	}
-	zap.S().Debugf("网卡[%s]添加默认网关[%s]成功", eth.Name, eth.ConfigGateway)
-
-}
-
-func CmdSetDHCP(eth *domain.Ethernet) (error, string) {
-
-	//非阻塞,动态获取IP有可能不成功
-	out, err := exec.Command("/bin/sh", "-c",
-		fmt.Sprintf("udhcpc -i %s", eth.Name)).Output()
-	if err != nil {
-		zap.S().Debug("网卡[%s]动态获取IP失败 %s %v", eth.Name, string(out), err)
-		return err, "nil"
-	}
-	zap.S().Debug("网卡[%s]动态获取IP成功 %s", eth.Name, string(out))
-
-	return nil, string(out)
 }

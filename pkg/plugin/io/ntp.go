@@ -2,11 +2,11 @@ package io
 
 import (
 	"github.com/robfig/cron/v3"
-	"zsxagw/core/config"
+	"tinyGW/pkg/service/conf"
 )
 
-func InitNtp(config *config.Config) {
-	command := "ntpdate " + config.Gateway.Ip
+func InitNtp(config *conf.Config) {
+	command := "ntpdate " + config.Cloud.Host
 	//OsCommand(command)
 	//OsCommand("hwclock --systohc")
 	OsCommand(command + " && hwclock --systohc")
@@ -19,8 +19,8 @@ func InitNtp(config *config.Config) {
 	c.Start()
 }
 
-func ExecuteNtp(config *config.Config) {
-	command := "ntpdate " + config.Gateway.Ip
+func ExecuteNtp(config *conf.Config) {
+	command := "ntpdate " + config.Cloud.Host
 	OsCommand(command)
 	OsCommand("hwclock --systohc")
 }

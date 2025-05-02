@@ -1,70 +1,69 @@
 package repository
 
 import (
-	"fmt"
+	"errors"
 	"gorm.io/gorm"
 	"tinyGW/app/models"
 )
 
-type CollectTaskRepository interface {
-	Save(collectTask *models.CollectTask) error
+type CollectorRepository interface {
+	Save(collector *models.Collector) error
 	Delete(name string) error
-	Find(name string) (*models.CollectTask, error)
-	FindAll() ([]models.CollectTask, error)
+	Find(name string) (models.Collector, error)
+	FindAll() ([]models.Collector, error)
+	List(limit int, offset int) ([]models.Collector, int64, error)
 }
 
-type collectTaskRepository struct {
+type collectorRepository struct {
 	db *gorm.DB
 }
 
-func (c collectTaskRepository) Save(collectTask *models.CollectTask) error {
+func (c collectorRepository) Save(collector *models.Collector) error {
 	var err error
-	var task models.CollectTask
-	c.db.Where("name = ?", collectTask.Name).First(&task)
-	if task.ID != 0 {
-		err = c.db.Model(&task).Save(&collectTask).Error
-		return err
-	} else {
-		err = c.db.Create(collectTask).Error
-		return err
+	var task models.Collector
+	if err = c.db.Where("name = ?", collector.Name).First(&task).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err = c.db.Create(collector).Error
+			return err
+		}
 	}
+	err = c.db.Model(&task).Where("name = ?", collector.Name).Updates(collector).Error
+	return err
 }
 
-func (c collectTaskRepository) Delete(name string) error {
-	return c.db.Delete(&models.CollectTask{}, "name = ?", name).Error
+func (c collectorRepository) Delete(name string) error {
+	return c.db.Delete(&models.Collector{}, "name = ?", name).Error
 }
 
-func (c collectTaskRepository) Find(name string) (*models.CollectTask, error) {
-	var collectTask models.CollectTask
-	c.db.Where("name =?", name).First(&collectTask)
-	if collectTask.ID == 0 {
-		return nil, fmt.Errorf("collect task not found")
-	}
-	return &collectTask, nil
+func (c collectorRepository) Find(name string) (models.Collector, error) {
+	var collector models.Collector
+	err := c.db.Where("name =?", name).First(&collector).Error
+	return collector, err
 }
 
-func (c collectTaskRepository) FindAll() ([]models.CollectTask, error) {
-	var collectTasks []models.CollectTask
-	err := c.db.Find(&collectTasks).Error
+func (c collectorRepository) FindAll() ([]models.Collector, error) {
+	var collectors []models.Collector
+	err := c.db.Find(&collectors).Error
 	if err != nil {
 		return nil, err
 	}
-	return collectTasks, nil
+	return collectors, nil
 }
 
-func NewCollectTaskRepository(db *gorm.DB) CollectTaskRepository {
-	db.AutoMigrate(&models.CollectTask{})
-	var count int64
-	db.Model(&models.CollectTask{}).Count(&count)
-	if count == 0 {
-		db.Create(&models.CollectTask{
-			Name:       "数据采集",
-			Cron:       "0 2 * * *",
-			Status:     0,
-			DeviceList: []string{"*"},
-		})
+func (c collectorRepository) List(limit int, offset int) ([]models.Collector, int64, error) {
+	var collectors []models.Collector
+	var total int64
+	c.db.Model(&models.Collector{}).Count(&total)
+	err := c.db.Limit(limit).Offset(offset).Find(&collectors).Error
+	if err != nil {
+		return nil, 0, err
 	}
-	return &collectTaskRepository{
+	return collectors, total, nil
+}
+
+func NewCollectorRepository(db *gorm.DB) CollectorRepository {
+	db.AutoMigrate(&models.Collector{})
+	return &collectorRepository{
 		db: db,
 	}
 }
