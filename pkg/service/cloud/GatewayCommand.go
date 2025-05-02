@@ -20,13 +20,14 @@ const (
 	GETCOLLECTORS       = "GetCollectors"
 	SETCOLLECTORS       = "SetCollectors"
 	SETINSTRUMENTS      = "SetInstruments"
-	GETINSTRUMENTS      = "GetInstruments"
 	SETINSTRUMENTTYPES  = "SetInstrumentTypes"
-	SetInstrumentDriver = "SetInstrumentDriver"
+	SETINSTRUMENTDRIVER = "SetInstrumentDriver"
 	//------------------------------------------
 	REBOOT  = "Reboot"
 	UPGRADE = "Upgrade"
 	PING    = "Ping"
+	//------------------------------------------
+	HEALTHCHECK = "HealthCheck"
 )
 
 type commandExecutor func(params map[string]interface{}, client Client) (int, interface{})
@@ -41,14 +42,16 @@ func initGatewayCommand() map[string]commandExecutor {
 	result[GETCOLLECTORS] = getCollectors
 	result[SETCOLLECTORS] = setCollectors
 	result[SETINSTRUMENTS] = setInstruments
-	result[GETINSTRUMENTS] = getInstruments
 	result[SETINSTRUMENTTYPES] = setInstrumentTypes
-	result[SetInstrumentDriver] = setInstrumentDriver
+	result[SETINSTRUMENTDRIVER] = setInstrumentDriver
 	//------------------------------------------------------
 	result[GETLOG] = getLog
 	result[REBOOT] = reboot
 	result[UPGRADE] = upgrade
 	result[PING] = ping
+	result[HEALTHCHECK] = healthCheck
+
+	//http.Handle("/metrics", promhttp.Handler())
 
 	return result
 }
@@ -358,4 +361,8 @@ func getLog(params map[string]interface{}, client Client) (int, interface{}) {
 	}
 
 	return 0, content
+}
+
+func healthCheck(params map[string]interface{}, client Client) (int, interface{}) {
+	return 0, "OK"
 }

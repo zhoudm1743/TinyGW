@@ -46,4 +46,5 @@ type Subscribe struct {
 	Username string `yaml:"username" json:"username"`
 	Password string `yaml:"password" json:"password"`
 	ClientId string `yaml:"clientId" json:"clientId"`
+	PoolSize int    `yaml:"poolSize" json:"poolSize"`
 }

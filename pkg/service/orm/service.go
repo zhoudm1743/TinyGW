@@ -41,6 +41,16 @@ func NewDb() (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gorm.Open(): %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("获取sql.DB对象失败: %v", err)
+	}
+	sqlDB.SetMaxIdleConns(64)
+	sqlDB.SetMaxOpenConns(128)
+	sqlDB.SetConnMaxLifetime(time.Hour)
+	if err = sqlDB.Ping(); err != nil {
+		return nil, fmt.Errorf("连接有效性检查失败: %v", err)
+	}
 	return db, nil
 }
 
