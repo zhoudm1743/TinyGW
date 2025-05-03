@@ -38,7 +38,7 @@ func (c reportTaskRepository) Save(reportTask *models.ReportTask) error {
 			}
 			c.event.Publish(event.Event{
 				Name: "ReportTask_Add",
-				Data: *reportTask,
+				Data: reportTask,
 			})
 			return nil
 		}
@@ -49,7 +49,7 @@ func (c reportTaskRepository) Save(reportTask *models.ReportTask) error {
 	}
 	c.event.Publish(event.Event{
 		Name: "ReportTask_Update",
-		Data: *reportTask,
+		Data: reportTask,
 	})
 
 	if len(task.Name) != 0 {

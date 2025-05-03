@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"tinyGW/app/api"
+	"tinyGW/pkg/plugin/io"
 	"tinyGW/pkg/service/cache"
 	"tinyGW/pkg/service/cloud"
 	"tinyGW/pkg/service/collect"
@@ -34,8 +35,11 @@ var Module = fx.Options(
 	collect.Module,
 	task.Module,
 
+	// 运行时间监听模块
+	fx.Invoke(io.StartTime),
+	// 启动订阅服务器
 	fx.Invoke(subscription.InitMqttServer),
-	// 启动MQTT客户端
+	// 启动云端客户端
 	fx.Invoke(cloud.InitMqttClient),
 	// 启动采集接口服务器
 	fx.Invoke(collect.InitCollectorServer),

@@ -24,6 +24,8 @@ func collectTaskRouter(t collectTask, r *types.ApiRouter) {
 	api.GET("/collect-task/:name", t.find)
 	api.GET("/collect-tasks", t.findAll)
 	api.GET("/collect-task/list", t.list)
+	api.GET("/collect-task/start/:name", t.start)
+	api.GET("/collect-task/stop/:name", t.stop)
 }
 
 func (t *collectTask) add(c *gin.Context) {
@@ -76,4 +78,24 @@ func (t *collectTask) list(c *gin.Context) {
 	}
 	res, err := t.Srv.List(&pageReq)
 	response.CheckAndRespWithData(c, res, err)
+}
+
+func (t *collectTask) start(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	err := t.Srv.Start(name)
+	response.CheckAndResp(c, err)
+}
+
+func (t *collectTask) stop(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	err := t.Srv.Stop(name)
+	response.CheckAndResp(c, err)
 }

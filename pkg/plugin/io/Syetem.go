@@ -61,7 +61,7 @@ func GetDiskState() {
 	SystemState.DiskUse = fmt.Sprintf("%5.2f", v.UsedPercent)
 }
 
-func GetStartTime() {
+func StartTime() {
 	timeStart = time.Now()
 }
 

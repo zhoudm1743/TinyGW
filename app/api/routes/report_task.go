@@ -24,6 +24,8 @@ func reportTaskRouter(t reportTask, r *types.ApiRouter) {
 	api.GET("/report-task/:name", t.find)
 	api.GET("/report-tasks", t.findAll)
 	api.GET("/report-task/list", t.list)
+	api.POST("/report-task/start/:name", t.start)
+	api.GET("/report-task/stop/:name", t.stop)
 }
 
 func (t *reportTask) add(c *gin.Context) {
@@ -76,4 +78,24 @@ func (t *reportTask) list(c *gin.Context) {
 	}
 	res, err := t.Srv.List(&pageReq)
 	response.CheckAndRespWithData(c, res, err)
+}
+
+func (t *reportTask) start(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	err := t.Srv.Start(name)
+	response.CheckAndResp(c, err)
+}
+
+func (t *reportTask) stop(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+	err := t.Srv.Stop(name)
+	response.CheckAndResp(c, err)
 }

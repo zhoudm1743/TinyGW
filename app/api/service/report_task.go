@@ -16,6 +16,8 @@ type ReportTaskService interface {
 	Find(name string) (*resp.ReportTaskResp, error)
 	FindAll() ([]resp.ReportTaskResp, error)
 	List(pageReq *req.PageReq) (response.PageResp, error)
+	Start(name string) error
+	Stop(name string) error
 }
 
 type reportTaskService struct {
@@ -87,6 +89,32 @@ func (c reportTaskService) List(page *req.PageReq) (response.PageResp, error) {
 		PageSize: page.PageSize,
 		Lists:    list,
 	}, nil
+}
+
+func (c reportTaskService) Start(name string) error {
+	rt, err := c.repo.Find(name)
+	if err != nil {
+		return fmt.Errorf("查询上报任务失败: %s", err.Error())
+	}
+	rt.Status = 1
+	err = c.repo.Save(&rt)
+	if err != nil {
+		return fmt.Errorf("启动上报任务失败: %s", err.Error())
+	}
+	return nil
+}
+
+func (c reportTaskService) Stop(name string) error {
+	rt, err := c.repo.Find(name)
+	if err != nil {
+		return fmt.Errorf("查询上报任务失败: %s", err.Error())
+	}
+	rt.Status = 0
+	err = c.repo.Save(&rt)
+	if err != nil {
+		return fmt.Errorf("停止上报任务失败: %s", err.Error())
+	}
+	return nil
 }
 
 func NewReportTaskService(repo repository.ReportTaskRepository) ReportTaskService {

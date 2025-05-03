@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/event"
 )
@@ -26,13 +27,16 @@ func (c collectTaskRepository) Save(collectTask *models.CollectTask) error {
 	var task models.CollectTask
 	if err = c.db.Where("name = ?", collectTask.Name).First(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = c.db.Create(collectTask).Error
+			err = c.db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "name"}},
+				UpdateAll: true,
+			}).Create(collectTask).Error
 			if err != nil {
 				return err
 			}
 			c.event.Publish(event.Event{
 				Name: "CollectTask_Add",
-				Data: *collectTask,
+				Data: collectTask,
 			})
 			return nil
 		}
@@ -43,13 +47,21 @@ func (c collectTaskRepository) Save(collectTask *models.CollectTask) error {
 	}
 	c.event.Publish(event.Event{
 		Name: "CollectTask_Update",
-		Data: *collectTask,
+		Data: collectTask,
 	})
 	return nil
 }
 
 func (c collectTaskRepository) Delete(name string) error {
-	return c.db.Delete(&models.CollectTask{}, "name = ?", name).Error
+	err := c.db.Delete(&models.CollectTask{}, "name = ?", name).Error
+	if err != nil {
+		return fmt.Errorf("删除采集任务失败: %s", err.Error())
+	}
+	c.event.Publish(event.Event{
+		Name: "CollectTask_Delete",
+		Data: name,
+	})
+	return nil
 }
 
 func (c collectTaskRepository) Find(name string) (models.CollectTask, error) {

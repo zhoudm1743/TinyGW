@@ -16,6 +16,8 @@ type CollectTaskService interface {
 	Find(name string) (*resp.CollectTaskResp, error)
 	FindAll() ([]resp.CollectTaskResp, error)
 	List(pageReq *req.PageReq) (response.PageResp, error)
+	Start(name string) error
+	Stop(name string) error
 }
 
 type collectTaskService struct {
@@ -87,6 +89,32 @@ func (c collectTaskService) List(page *req.PageReq) (response.PageResp, error) {
 		PageSize: page.PageSize,
 		Lists:    list,
 	}, nil
+}
+
+func (c collectTaskService) Start(name string) error {
+	rt, err := c.repo.Find(name)
+	if err != nil {
+		return fmt.Errorf("查询采集任务失败: %s", err.Error())
+	}
+	rt.Status = 1
+	err = c.repo.Save(&rt)
+	if err != nil {
+		return fmt.Errorf("启动采集任务失败: %s", err.Error())
+	}
+	return nil
+}
+
+func (c collectTaskService) Stop(name string) error {
+	rt, err := c.repo.Find(name)
+	if err != nil {
+		return fmt.Errorf("查询采集任务失败: %s", err.Error())
+	}
+	rt.Status = 0
+	err = c.repo.Save(&rt)
+	if err != nil {
+		return fmt.Errorf("停止采集任务失败: %s", err.Error())
+	}
+	return nil
 }
 
 func NewCollectTaskService(repo repository.CollectTaskRepository) CollectTaskService {
