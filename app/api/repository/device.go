@@ -2,7 +2,6 @@ package repository
 
 import (
 	"errors"
-	"github.com/gookit/color"
 	"gorm.io/gorm"
 	"tinyGW/app/models"
 )
@@ -108,15 +107,11 @@ func (c deviceRepository) List(limit int, offset int) ([]models.Device, int64, e
 	if err != nil {
 		return nil, 0, err
 	}
-	color.Infoln("count:", count)
-	color.Infoln("devices:", devices)
 	return devices, count, nil
 }
 
 func NewDeviceRepository(db *gorm.DB) DeviceRepository {
 	db.AutoMigrate(&models.Device{})
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_devices_name ON devices(name)")
-	db.Exec("CREATE INDEX IF NOT EXISTS idx_devices_address ON devices(address)")
 	return &deviceRepository{
 		db: db,
 	}
