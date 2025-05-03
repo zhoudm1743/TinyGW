@@ -53,6 +53,10 @@ func InitCollectTaskServer(collectTaskServer *CollectTaskServer, repository repo
 		task := e.Data.(*models.CollectTask)
 		collectTaskServer.Update(task)
 	})
+	e.Subscribe("ReadReal", func(e event.Event) {
+		zap.S().Info("读取实时数据", e.Data)
+		collectTaskServer.Collect([]string{})
+	})
 }
 
 // Add 新增定时任务，如果定时任务是开启状态，则开启定时任务

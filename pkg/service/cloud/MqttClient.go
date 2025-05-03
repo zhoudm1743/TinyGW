@@ -3,7 +3,7 @@ package cloud
 import (
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
-	"go.uber.org/fx"
+	"github.com/patrickmn/go-cache"
 	"go.uber.org/zap"
 	"strconv"
 	"strings"
@@ -12,6 +12,7 @@ import (
 	"tinyGW/pkg/service/collect"
 	"tinyGW/pkg/service/collect/worker"
 	"tinyGW/pkg/service/conf"
+	"tinyGW/pkg/service/event"
 )
 
 type (
@@ -23,6 +24,8 @@ type (
 		collectTaskRepository repository.CollectTaskRepository
 		collectorRepository   repository.CollectorRepository
 		deviceTypeRepository  repository.DeviceTypeRepository
+		cache                 *cache.Cache
+		eventBus              *event.EventService
 	}
 )
 
@@ -36,6 +39,8 @@ func InitMqttClient(
 	collectorRepository repository.CollectorRepository,
 	deviceTypeRepository repository.DeviceTypeRepository,
 	collectTaskRepository repository.CollectTaskRepository,
+	cache *cache.Cache,
+	eventBus *event.EventService,
 ) *Client {
 	zap.S().Info("实例化Mqtt Client")
 
@@ -72,11 +77,11 @@ func InitMqttClient(
 		deviceTypeRepository:  deviceTypeRepository,
 		collectTaskRepository: collectTaskRepository,
 		stop:                  make(chan bool, 1),
+		cache:                 cache,
+		eventBus:              eventBus,
 	}
 	return MClient
 }
-
-var Module = fx.Provide(InitMqttClient)
 
 // Connect 连接服务器
 func (mc *Client) Connect() {

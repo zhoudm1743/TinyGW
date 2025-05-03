@@ -7,8 +7,10 @@ import (
 	"go.uber.org/zap"
 	"os"
 	"strings"
+	"time"
 	"tinyGW/app/models"
 	"tinyGW/pkg/plugin/io"
+	"tinyGW/pkg/service/event"
 	"tinyGW/pkg/util"
 )
 
@@ -30,6 +32,7 @@ const (
 	PING    = "Ping"
 	//------------------------------------------
 	HEALTHCHECK = "HealthCheck"
+	ReadReal    = "ReadReal"
 )
 
 type commandExecutor func(params map[string]interface{}, client Client) (int, interface{})
@@ -54,10 +57,28 @@ func initGatewayCommand() map[string]commandExecutor {
 	result[UPGRADE] = upgrade
 	result[PING] = ping
 	result[HEALTHCHECK] = healthCheck
+	result[ReadReal] = readReal
 
 	//http.Handle("/metrics", promhttp.Handler())
 
 	return result
+}
+
+func readReal(params map[string]interface{}, client Client) (int, interface{}) {
+	devices, err := client.deviceRepository.FindAll()
+	if err != nil {
+		zap.S().Errorf("RPC获取设备失败, ERROR: %v", err)
+		return 1, nil
+	}
+	key := "read_real"
+	_, is := client.cache.Get(key)
+	if is {
+		return 1, "任务正在执行中！"
+	}
+	count := len(devices)
+	client.eventBus.Publish(event.Event{Name: "ReadReal", Data: count})
+	client.cache.Set(key, "running", time.Duration(count*2)*time.Second)
+	return 0, "任务开始执行！"
 }
 
 func getCollectTask(params map[string]interface{}, client Client) (int, interface{}) {

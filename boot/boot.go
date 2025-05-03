@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"tinyGW/app/api"
+	"tinyGW/pkg/service/cache"
 	"tinyGW/pkg/service/cloud"
 	"tinyGW/pkg/service/collect"
 	"tinyGW/pkg/service/conf"
@@ -24,6 +25,7 @@ var Module = fx.Options(
 	conf.Module,
 	logger.Module,
 	ntp.Module,
+	cache.Module,
 	event.Module,
 	orm.Module,
 	http.Module,
