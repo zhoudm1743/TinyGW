@@ -6,6 +6,8 @@ import (
 	"go.uber.org/fx"
 )
 
+var Version = "v20250503"
+
 func NewConfig() *Config {
 	defaultConfig := &Config{
 		Server: Server{

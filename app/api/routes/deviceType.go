@@ -25,6 +25,7 @@ func deviceTypeRouter(t deviceType, r *types.ApiRouter) {
 	api.GET("/device-type/:name", t.find)
 	api.GET("/device-types", t.findAll)
 	api.GET("/device-type/list", t.list)
+	api.POST("/device-type/upload/:name", t.upload)
 
 	// id为设备类型id，propertyId为属性id
 	api.POST("/device-property/:name", t.addProperties)
@@ -156,5 +157,16 @@ func (t *deviceType) findAllProperties(c *gin.Context) {
 		return
 	}
 	res, err := t.Srv.FindAllProperties(name)
+	response.CheckAndRespWithData(c, res, err)
+}
+
+func (t *deviceType) upload(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.FailWithMsg(c, response.ParamsValidError, "name不能为空")
+		return
+	}
+
+	res, err := t.Srv.Upload(name, c)
 	response.CheckAndRespWithData(c, res, err)
 }

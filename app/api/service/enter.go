@@ -10,4 +10,5 @@ var Module = fx.Module("service",
 	fx.Provide(NewDeviceService),
 	fx.Provide(NewDeviceTypeService),
 	fx.Provide(NewUserService),
+	fx.Provide(NewDebugService),
 )

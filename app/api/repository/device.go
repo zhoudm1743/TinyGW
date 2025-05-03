@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"tinyGW/app/models"
 )
 
@@ -72,7 +73,10 @@ func (c deviceRepository) Save(device *models.Device) error {
 	var task models.Device
 	if err = c.db.Where("name = ?", device.Name).First(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = c.db.Create(device).Error
+			err = c.db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "name"}},
+				UpdateAll: true,
+			}).Create(device).Error
 			return err
 		}
 	}

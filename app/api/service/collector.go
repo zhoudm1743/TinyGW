@@ -8,7 +8,6 @@ import (
 	"tinyGW/app/api/schemas/resp"
 	"tinyGW/app/models"
 	"tinyGW/pkg/plugin/response"
-	"tinyGW/pkg/service/event"
 )
 
 type CollectorService interface {
@@ -24,7 +23,6 @@ type collectorService struct {
 	collectorRepo   repository.CollectorRepository
 	deviceRepo      repository.DeviceRepository
 	collectTaskRepo repository.CollectTaskRepository
-	event           *event.EventService
 }
 
 func (c collectorService) Add(addReq *req.CollectorSaveReq) error {
@@ -38,10 +36,7 @@ func (c collectorService) Add(addReq *req.CollectorSaveReq) error {
 	if err != nil {
 		return fmt.Errorf("保存采集接口失败:%v", err)
 	}
-	c.event.Publish(event.Event{
-		Name: "collector_add",
-		Data: coll,
-	})
+
 	return nil
 }
 
@@ -53,10 +48,7 @@ func (c collectorService) Update(updateReq *req.CollectorSaveReq) error {
 		return fmt.Errorf("更新采集接口失败:%v", err)
 	}
 	c.deviceRepo.CollectorChanged(coll)
-	c.event.Publish(event.Event{
-		Name: "collector_update",
-		Data: coll,
-	})
+
 	return nil
 }
 
@@ -72,10 +64,6 @@ func (c collectorService) Delete(name string) error {
 	if err != nil {
 		return fmt.Errorf("删除采集接口失败:%v", err)
 	}
-	c.event.Publish(event.Event{
-		Name: "collector_delete",
-		Data: name,
-	})
 	return nil
 }
 
@@ -116,11 +104,10 @@ func (c collectorService) List(page *req.PageReq) (response.PageResp, error) {
 	}, nil
 }
 
-func NewCollectorService(repo repository.CollectorRepository, deviceRepo repository.DeviceRepository, collectTaskRepo repository.CollectTaskRepository, event *event.EventService) CollectorService {
+func NewCollectorService(repo repository.CollectorRepository, deviceRepo repository.DeviceRepository, collectTaskRepo repository.CollectTaskRepository) CollectorService {
 	return &collectorService{
 		collectorRepo:   repo,
 		deviceRepo:      deviceRepo,
 		collectTaskRepo: collectTaskRepo,
-		event:           event,
 	}
 }

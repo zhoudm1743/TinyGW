@@ -9,14 +9,15 @@ import (
 	"log"
 	"os"
 	"path"
-	"path/filepath"
 	"time"
 )
 
 func NewDb() (*gorm.DB, error) {
 	var err error
-	exeDir, _ := os.Executable()
-	dir := filepath.Dir(exeDir)
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("获取当前工作目录失败: %v", err)
+	}
 	dbFile := path.Join(dir, "tinyGW.db")
 	// 检查数据库文件是否存在，不存在生成sqlite3文件
 	if _, err := os.Stat(dbFile); os.IsNotExist(err) {

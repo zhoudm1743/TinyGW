@@ -2,8 +2,10 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"gorm.io/gorm"
 	"tinyGW/app/models"
+	"tinyGW/pkg/service/event"
 )
 
 type CollectTaskRepository interface {
@@ -15,7 +17,8 @@ type CollectTaskRepository interface {
 }
 
 type collectTaskRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	event *event.EventService
 }
 
 func (c collectTaskRepository) Save(collectTask *models.CollectTask) error {
@@ -24,11 +27,25 @@ func (c collectTaskRepository) Save(collectTask *models.CollectTask) error {
 	if err = c.db.Where("name = ?", collectTask.Name).First(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			err = c.db.Create(collectTask).Error
-			return err
+			if err != nil {
+				return err
+			}
+			c.event.Publish(event.Event{
+				Name: "CollectTask_Add",
+				Data: *collectTask,
+			})
+			return nil
 		}
 	}
 	err = c.db.Model(&task).Where("name = ?", collectTask.Name).Updates(collectTask).Error
-	return err
+	if err != nil {
+		return fmt.Errorf("更新采集任务失败: %s", err.Error())
+	}
+	c.event.Publish(event.Event{
+		Name: "CollectTask_Update",
+		Data: *collectTask,
+	})
+	return nil
 }
 
 func (c collectTaskRepository) Delete(name string) error {
@@ -61,7 +78,7 @@ func (c collectTaskRepository) List(limit int, offset int) ([]models.CollectTask
 	return collectTasks, count, nil
 }
 
-func NewCollectTaskRepository(db *gorm.DB) CollectTaskRepository {
+func NewCollectTaskRepository(db *gorm.DB, event *event.EventService) CollectTaskRepository {
 	db.AutoMigrate(&models.CollectTask{})
 	var count int64
 	db.Model(&models.CollectTask{}).Count(&count)
@@ -70,10 +87,11 @@ func NewCollectTaskRepository(db *gorm.DB) CollectTaskRepository {
 			Name:       "数据采集",
 			Cron:       "0 2 * * *",
 			Status:     0,
-			DeviceList: []string{"*"},
+			DeviceList: []string{},
 		})
 	}
 	return &collectTaskRepository{
-		db: db,
+		db:    db,
+		event: event,
 	}
 }

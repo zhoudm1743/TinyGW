@@ -15,6 +15,7 @@ var Module = fx.Module("routes",
 	fx.Invoke(deviceRouter),
 	fx.Invoke(deviceTypeRouter),
 	fx.Invoke(userRouter),
+	fx.Invoke(debugRouter),
 )
 
 type Routes struct {

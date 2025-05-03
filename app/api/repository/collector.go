@@ -3,7 +3,9 @@ package repository
 import (
 	"errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"tinyGW/app/models"
+	"tinyGW/pkg/service/event"
 )
 
 type CollectorRepository interface {
@@ -15,7 +17,8 @@ type CollectorRepository interface {
 }
 
 type collectorRepository struct {
-	db *gorm.DB
+	db    *gorm.DB
+	event *event.EventService
 }
 
 func (c collectorRepository) Save(collector *models.Collector) error {
@@ -23,16 +26,41 @@ func (c collectorRepository) Save(collector *models.Collector) error {
 	var task models.Collector
 	if err = c.db.Where("name = ?", collector.Name).First(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = c.db.Create(collector).Error
-			return err
+			err = c.db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "name"}},
+				UpdateAll: true,
+			}).Create(collector).Error
+			if err != nil {
+				return err
+			}
+			c.event.Publish(event.Event{
+				Name: "collector_add",
+				Data: *collector,
+			})
+			return nil
 		}
 	}
 	err = c.db.Model(&task).Where("name = ?", collector.Name).Updates(collector).Error
-	return err
+	if err != nil {
+		return err
+	}
+	c.event.Publish(event.Event{
+		Name: "collector_update",
+		Data: *collector,
+	})
+	return nil
 }
 
 func (c collectorRepository) Delete(name string) error {
-	return c.db.Delete(&models.Collector{}, "name = ?", name).Error
+	err := c.db.Delete(&models.Collector{}, "name = ?", name).Error
+	if err != nil {
+		return err
+	}
+	c.event.Publish(event.Event{
+		Name: "collector_delete",
+		Data: name,
+	})
+	return nil
 }
 
 func (c collectorRepository) Find(name string) (models.Collector, error) {
@@ -61,9 +89,10 @@ func (c collectorRepository) List(limit int, offset int) ([]models.Collector, in
 	return collectors, total, nil
 }
 
-func NewCollectorRepository(db *gorm.DB) CollectorRepository {
+func NewCollectorRepository(db *gorm.DB, event *event.EventService) CollectorRepository {
 	db.AutoMigrate(&models.Collector{})
 	return &collectorRepository{
-		db: db,
+		db:    db,
+		event: event,
 	}
 }

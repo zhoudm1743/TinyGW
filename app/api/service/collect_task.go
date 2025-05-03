@@ -7,7 +7,6 @@ import (
 	"tinyGW/app/api/schemas/resp"
 	"tinyGW/app/models"
 	"tinyGW/pkg/plugin/response"
-	"tinyGW/pkg/service/event"
 )
 
 type CollectTaskService interface {
@@ -20,8 +19,7 @@ type CollectTaskService interface {
 }
 
 type collectTaskService struct {
-	repo  repository.CollectTaskRepository
-	event *event.EventService
+	repo repository.CollectTaskRepository
 }
 
 func (c collectTaskService) Add(addReq *req.CollectTaskReq) error {
@@ -35,10 +33,6 @@ func (c collectTaskService) Add(addReq *req.CollectTaskReq) error {
 	if err != nil {
 		return err
 	}
-	c.event.Publish(event.Event{
-		Name: "CollectTask_Add",
-		Data: &ct,
-	})
 	return nil
 }
 
@@ -49,10 +43,6 @@ func (c collectTaskService) Update(updateReq *req.CollectTaskReq) error {
 	if err != nil {
 		return fmt.Errorf("更新采集任务失败: %s", err.Error())
 	}
-	c.event.Publish(event.Event{
-		Name: "CollectTask_Update",
-		Data: &ct,
-	})
 	return nil
 }
 
@@ -61,10 +51,6 @@ func (c collectTaskService) Delete(name string) error {
 	if err != nil {
 		return fmt.Errorf("删除采集任务失败: %s", err.Error())
 	}
-	c.event.Publish(event.Event{
-		Name: "CollectTask_Delete",
-		Data: name,
-	})
 	return nil
 }
 
@@ -103,9 +89,8 @@ func (c collectTaskService) List(page *req.PageReq) (response.PageResp, error) {
 	}, nil
 }
 
-func NewCollectTaskService(repo repository.CollectTaskRepository, event *event.EventService) CollectTaskService {
+func NewCollectTaskService(repo repository.CollectTaskRepository) CollectTaskService {
 	return &collectTaskService{
-		repo:  repo,
-		event: event,
+		repo: repo,
 	}
 }

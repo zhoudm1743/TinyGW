@@ -2,6 +2,6 @@ package models
 
 type User struct {
 	Model
-	Username string `json:"username" gorm:"type:varchar(255);unique;not null;index:idx_username"`
+	Name     string `gorm:"type:varchar(255);primary_key;" json:"name"`
 	Password string `json:"password"`
 }

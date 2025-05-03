@@ -3,7 +3,7 @@ package models
 // ReportTask 定时任务表
 type ReportTask struct {
 	Model
-	Name       string `json:"name" gorm:"type:varchar(255);unique;not null;index:idx_report_name"`
+	Name       string `gorm:"type:varchar(255);primary_key;" json:"name"`
 	ReportName string `json:"reportName"` // 平台名称
 	Ip         string `json:"ip"`         // ip地址
 	Port       int    `json:"port"`       // 端口

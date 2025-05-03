@@ -20,7 +20,7 @@ type DeviceProperty struct {
 // DeviceType 设备类型
 type DeviceType struct {
 	Model
-	Name       string           `json:"name" gorm:"type:varchar(255);unique;index:idx_device_name"` // 名称，英文标识
-	Driver     string           `json:"driver"`                                                     // 驱动程序目录、文件名
+	Name       string           `gorm:"type:varchar(255);primary_key;" json:"name"`
+	Driver     string           `json:"driver"` // 驱动程序目录、文件名
 	Properties []DeviceProperty `json:"properties" gorm:"type:json;serializer:json"`
 }

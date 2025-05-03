@@ -7,7 +7,6 @@ import (
 	"tinyGW/app/api/schemas/resp"
 	"tinyGW/app/models"
 	"tinyGW/pkg/plugin/response"
-	"tinyGW/pkg/service/event"
 )
 
 type ReportTaskService interface {
@@ -20,8 +19,7 @@ type ReportTaskService interface {
 }
 
 type reportTaskService struct {
-	repo  repository.ReportTaskRepository
-	event *event.EventService
+	repo repository.ReportTaskRepository
 }
 
 func (c reportTaskService) Add(addReq *req.ReportTaskReq) error {
@@ -35,10 +33,6 @@ func (c reportTaskService) Add(addReq *req.ReportTaskReq) error {
 	if err != nil {
 		return err
 	}
-	c.event.Publish(event.Event{
-		Name: "ReportTask_Add",
-		Data: &ct,
-	})
 	return nil
 }
 
@@ -49,10 +43,6 @@ func (c reportTaskService) Update(updateReq *req.ReportTaskReq) error {
 	if err != nil {
 		return fmt.Errorf("更新采集任务失败: %s", err.Error())
 	}
-	c.event.Publish(event.Event{
-		Name: "ReportTask_Update",
-		Data: &ct,
-	})
 	return nil
 }
 
@@ -61,10 +51,6 @@ func (c reportTaskService) Delete(name string) error {
 	if err != nil {
 		return fmt.Errorf("删除采集任务失败: %s", err.Error())
 	}
-	c.event.Publish(event.Event{
-		Name: "ReportTask_Delete",
-		Data: name,
-	})
 	return nil
 }
 
@@ -103,9 +89,8 @@ func (c reportTaskService) List(page *req.PageReq) (response.PageResp, error) {
 	}, nil
 }
 
-func NewReportTaskService(repo repository.ReportTaskRepository, event *event.EventService) ReportTaskService {
+func NewReportTaskService(repo repository.ReportTaskRepository) ReportTaskService {
 	return &reportTaskService{
-		repo:  repo,
-		event: event,
+		repo: repo,
 	}
 }

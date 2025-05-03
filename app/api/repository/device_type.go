@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/gookit/color"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"tinyGW/app/models"
 )
 
@@ -75,7 +76,10 @@ func (c deviceTypeRepository) Save(deviceType *models.DeviceType) error {
 	if err = c.db.Where("name = ?", deviceType.Name).First(&task).Error; err != nil {
 		color.Infoln(err)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = c.db.Create(deviceType).Error
+			err = c.db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "name"}},
+				UpdateAll: true,
+			}).Create(deviceType).Error
 			return err
 		}
 	}

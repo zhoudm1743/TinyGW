@@ -35,13 +35,13 @@ type Channel struct {
 // 其中Serial、TcpClient、TcpServer、Mqtt、Channel为json格式，需要解析为对应的结构体
 type Collector struct {
 	Model
-	Name      string    `json:"name" gorm:"type:varchar(255);unique;not null;index:idx_name"` // 名称，英文标识
-	Type      string    `json:"type" gorm:"type:varchar(255);not null;index:idx_type"`        // 接口类型Serial或TcpClient或TcpServer或Mqtt或Channel
-	Serial    Serial    `json:"serial" gorm:"type:json;serializer:json"`                      // 串口
-	TcpClient TcpClient `json:"tcpClient" gorm:"type:json;serializer:json"`                   // Tcp客户端
-	TcpServer TcpServer `json:"tcpServer" gorm:"type:json;serializer:json"`                   // Tcp服务端
-	Mqtt      Mqtt      `json:"mqtt" gorm:"type:json;serializer:json"`                        // Mqtt
-	Channel   Channel   `json:"channel" gorm:"type:json;serializer:json"`                     // 通道
-	Timeout   int       `json:"timeout"`                                                      // 超时
-	Interval  int       `json:"interval"`                                                     // 间隔
+	Name      string    `gorm:"type:varchar(255);primary_key;" json:"name"`
+	Type      string    `json:"type" gorm:"type:varchar(255);not null;index:idx_collector_type"` // 接口类型Serial或TcpClient或TcpServer或Mqtt或Channel
+	Serial    Serial    `json:"serial" gorm:"type:json;serializer:json"`                         // 串口
+	TcpClient TcpClient `json:"tcpClient" gorm:"type:json;serializer:json"`                      // Tcp客户端
+	TcpServer TcpServer `json:"tcpServer" gorm:"type:json;serializer:json"`                      // Tcp服务端
+	Mqtt      Mqtt      `json:"mqtt" gorm:"type:json;serializer:json"`                           // Mqtt
+	Channel   Channel   `json:"channel" gorm:"type:json;serializer:json"`                        // 通道
+	Timeout   int       `json:"timeout"`                                                         // 超时
+	Interval  int       `json:"interval"`                                                        // 间隔
 }

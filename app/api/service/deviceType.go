@@ -1,11 +1,17 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"github.com/gin-gonic/gin"
+	"os"
+	"path"
+	"strings"
 	"tinyGW/app/api/repository"
 	"tinyGW/app/api/schemas/req"
 	"tinyGW/app/api/schemas/resp"
 	"tinyGW/app/models"
+	"tinyGW/pkg/plugin/io"
 	"tinyGW/pkg/plugin/response"
 )
 
@@ -22,6 +28,7 @@ type DeviceTypeService interface {
 	DeleteProperties(deviceTypeName string, devicePropertyId int) error
 	FindProperty(deviceTypeName string, devicePropertyId int) (models.DeviceProperty, error)
 	FindAllProperties(deviceTypeName string) ([]models.DeviceProperty, error)
+	Upload(name string, c *gin.Context) (resp.DeviceTypeResp, error)
 }
 
 type deviceTypeService struct {
@@ -129,6 +136,56 @@ func (d deviceTypeService) List(page *req.PageReq) (response.PageResp, error) {
 		PageSize: page.PageSize,
 		Lists:    list,
 	}, nil
+}
+
+func (d deviceTypeService) Upload(name string, c *gin.Context) (resp.DeviceTypeResp, error) {
+	dt, err := d.deviceTypeRepository.Find(name)
+	if err != nil {
+		return resp.DeviceTypeResp{}, fmt.Errorf("仪表 %s 不存在", name)
+	}
+	io.SureExists("plugin")
+	dir, err := os.Getwd()
+	if err != nil {
+		return resp.DeviceTypeResp{}, fmt.Errorf("获取当前目录失败 %s", err.Error())
+	}
+	file, err := c.FormFile("FileName")
+	if err != nil {
+		return resp.DeviceTypeResp{}, fmt.Errorf("上传失败 %s", err.Error())
+	}
+	pluginDir := path.Join(dir, "plugin")
+	filename := path.Join(pluginDir, file.Filename)
+	err = c.SaveUploadedFile(file, filename)
+	if err != nil {
+		return resp.DeviceTypeResp{}, fmt.Errorf("保存文件失败 %s", err.Error())
+	}
+	defer os.Remove(filename)
+
+	err = io.Unzip(filename, pluginDir)
+	if err != nil {
+		return resp.DeviceTypeResp{}, fmt.Errorf("解压失败 %s", err.Error())
+	}
+	filenameWithSuffix := path.Base(filename)
+	fileType := path.Ext(filename)
+	plugin := strings.TrimSuffix(filenameWithSuffix, fileType)
+	dt.Driver = plugin
+
+	propertiesFile := "plugin/" + plugin + "/properties.json"
+	if ok := io.PathExists(propertiesFile); ok {
+		if data, err := io.ReadFile(propertiesFile); err == nil {
+			properties := []models.DeviceProperty{}
+			if json.Unmarshal(data, &properties) == nil {
+				dt.Properties = properties
+			}
+		}
+	}
+
+	err = d.deviceTypeRepository.Save(&dt)
+	if err != nil {
+		return resp.DeviceTypeResp{}, fmt.Errorf("保存失败 %s", err.Error())
+	}
+	var resp resp.DeviceTypeResp
+	response.Copy(&resp, dt)
+	return resp, nil
 }
 
 func NewDeviceTypeService(deviceRepository repository.DeviceRepository, deviceTypeRepository repository.DeviceTypeRepository) DeviceTypeService {

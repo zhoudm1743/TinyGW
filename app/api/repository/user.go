@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"tinyGW/app/models"
 )
 
@@ -21,13 +22,16 @@ type userRepository struct {
 func (c userRepository) Save(user *models.User) error {
 	var err error
 	var task models.User
-	if err = c.db.Where("username = ?", user.Username).First(&task).Error; err != nil {
+	if err = c.db.Where("name = ?", user.Name).First(&task).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			err = c.db.Create(user).Error
+			err = c.db.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "name"}},
+				UpdateAll: true,
+			}).Create(user).Error
 			return err
 		}
 	}
-	err = c.db.Model(&task).Where("username = ?", user.Username).Updates(user).Error
+	err = c.db.Model(&task).Where("name = ?", user.Name).Updates(user).Error
 	return err
 }
 
@@ -37,7 +41,7 @@ func (c userRepository) Delete(name string) error {
 
 func (c userRepository) Find(name string) (models.User, error) {
 	var user models.User
-	err := c.db.Where("username = ?", name).First(&user).Error
+	err := c.db.Where("name = ?", name).First(&user).Error
 	return user, err
 }
 
@@ -67,7 +71,7 @@ func NewUserRepository(db *gorm.DB) UserRepository {
 	db.Model(&models.User{}).Count(&count)
 	if count == 0 {
 		db.Create(&models.User{
-			Username: "admin",
+			Name:     "admin",
 			Password: "XAKJ8808856",
 		})
 	}

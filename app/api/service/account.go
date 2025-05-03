@@ -24,12 +24,12 @@ func (a accountService) Login(loginReq *req.AccountLoginReq) (res *resp.AccountL
 	if account.Password != loginReq.Password {
 		return nil, fmt.Errorf("密码错误")
 	}
-	token, err := util.JwtUtil.GenerateToken(account.Username)
+	token, err := util.JwtUtil.GenerateToken(account.Name)
 	if err != nil {
 		return nil, fmt.Errorf("生成token失败")
 	}
 	return &resp.AccountLoginResp{
-		Username: account.Username,
+		Username: account.Name,
 		Token:    token,
 	}, nil
 }
