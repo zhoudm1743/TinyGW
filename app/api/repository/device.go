@@ -115,6 +115,8 @@ func (c deviceRepository) List(limit int, offset int) ([]models.Device, int64, e
 
 func NewDeviceRepository(db *gorm.DB) DeviceRepository {
 	db.AutoMigrate(&models.Device{})
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_devices_name ON devices(name)")
+	db.Exec("CREATE INDEX IF NOT EXISTS idx_devices_address ON devices(address)")
 	return &deviceRepository{
 		db: db,
 	}

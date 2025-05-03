@@ -36,7 +36,9 @@ func NewDb() (*gorm.DB, error) {
 			IgnoreRecordNotFoundError: false,
 		})
 	db, err = gorm.Open(sqlite.Open(dbFile), &gorm.Config{
-		Logger: l,
+		Logger:                 l,
+		PrepareStmt:            true,
+		SkipDefaultTransaction: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("gorm.Open(): %v", err)
@@ -45,8 +47,13 @@ func NewDb() (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("获取sql.DB对象失败: %v", err)
 	}
-	sqlDB.SetMaxIdleConns(64)
-	sqlDB.SetMaxOpenConns(128)
+	// 在初始化后执行 PRAGMA 命令
+	db.Exec("PRAGMA journal_mode = WAL;")   // 使用 Write-Ahead Logging
+	db.Exec("PRAGMA synchronous = NORMAL;") // 降低同步频率
+	db.Exec("PRAGMA cache_size = -10000;")  // 设置 10MB 缓存
+
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	if err = sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("连接有效性检查失败: %v", err)
@@ -56,15 +63,6 @@ func NewDb() (*gorm.DB, error) {
 
 func GetDb() *gorm.DB {
 	return db
-}
-
-func CloseDb() {
-	sqlDB, _ := db.DB()
-	err := sqlDB.Close()
-	if err != nil {
-		fmt.Println("关闭数据库连接失败: ", err)
-		return
-	}
 }
 
 var Module = fx.Provide(
