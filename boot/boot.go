@@ -55,6 +55,7 @@ func setup(
 	server *http.Service,
 	db *gorm.DB,
 	ntpSrv *ntp.NtpService,
+	eventBus *event.EventService,
 ) {
 	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
@@ -75,6 +76,7 @@ func setup(
 		OnStop: func(ctx context.Context) error {
 			zap.S().Error("停止Web服务器")
 			_ = out(db)
+			eventBus.Shutdown()
 			return server.Server.Shutdown(ctx)
 		},
 	})
