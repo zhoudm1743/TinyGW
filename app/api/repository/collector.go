@@ -40,7 +40,7 @@ func (c collectorRepository) Save(collector *models.Collector) error {
 			return nil
 		}
 	}
-	err = c.db.Model(&task).Where("name = ?", collector.Name).Updates(collector).Error
+	err = c.db.Save(collector).Error
 	if err != nil {
 		return err
 	}

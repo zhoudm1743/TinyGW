@@ -31,7 +31,7 @@ func (c userRepository) Save(user *models.User) error {
 			return err
 		}
 	}
-	err = c.db.Model(&task).Where("name = ?", user.Name).Updates(user).Error
+	err = c.db.Model(&task).Save(user).Error
 	return err
 }
 

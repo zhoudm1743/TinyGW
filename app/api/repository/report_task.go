@@ -43,7 +43,7 @@ func (c reportTaskRepository) Save(reportTask *models.ReportTask) error {
 			return nil
 		}
 	}
-	err = c.db.Model(&task).Where("name = ?", reportTask.Name).Updates(reportTask).Error
+	err = c.db.Save(reportTask).Error
 	if err != nil {
 		return fmt.Errorf("更新采集任务失败: %s", err.Error())
 	}

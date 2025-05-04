@@ -24,7 +24,7 @@ func reportTaskRouter(t reportTask, r *types.ApiRouter) {
 	api.GET("/report-task/:name", t.find)
 	api.GET("/report-tasks", t.findAll)
 	api.GET("/report-task/list", t.list)
-	api.POST("/report-task/start/:name", t.start)
+	api.GET("/report-task/start/:name", t.start)
 	api.GET("/report-task/stop/:name", t.stop)
 }
 

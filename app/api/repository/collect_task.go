@@ -41,7 +41,7 @@ func (c collectTaskRepository) Save(collectTask *models.CollectTask) error {
 			return nil
 		}
 	}
-	err = c.db.Model(&task).Where("name = ?", collectTask.Name).Updates(collectTask).Error
+	err = c.db.Model(&task).Save(collectTask).Error
 	if err != nil {
 		return fmt.Errorf("更新采集任务失败: %s", err.Error())
 	}

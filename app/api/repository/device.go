@@ -80,7 +80,7 @@ func (c deviceRepository) Save(device *models.Device) error {
 			return err
 		}
 	}
-	err = c.db.Model(&task).Where("name = ?", device.Name).Updates(device).Error
+	err = c.db.Save(device).Error
 	return err
 }
 

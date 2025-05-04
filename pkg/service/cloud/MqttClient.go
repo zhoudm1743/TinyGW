@@ -5,7 +5,6 @@ import (
 	"github.com/eclipse/paho.mqtt.golang"
 	"github.com/patrickmn/go-cache"
 	"go.uber.org/zap"
-	"strconv"
 	"strings"
 	"time"
 	"tinyGW/app/api/repository"
@@ -26,6 +25,7 @@ type (
 		deviceTypeRepository  repository.DeviceTypeRepository
 		cache                 *cache.Cache
 		eventBus              *event.EventService
+		config                *conf.Config
 	}
 )
 
@@ -41,25 +41,20 @@ func InitMqttClient(
 	collectTaskRepository repository.CollectTaskRepository,
 	cache *cache.Cache,
 	eventBus *event.EventService,
+	config *conf.Config,
 ) *Client {
 	zap.S().Info("实例化Mqtt Client")
-
-	reportTask, err := repository.Find("数据上报")
-	if err != nil {
-		zap.S().Error("没找到上报服务中的【数据上报】那条记录，没有实例化mqtt client.")
-		return nil
-	}
-
 	clientOptions := mqtt.NewClientOptions()
 
-	clientOptions.AddBroker(reportTask.Ip + ":" + strconv.Itoa(reportTask.Port))
+	uri := fmt.Sprintf("%s:%d", config.Cloud.Host, config.Cloud.Port)
+	clientOptions.AddBroker(uri)
 
 	// 客户信息
-	clientOptions.SetClientID(reportTask.ClientID)
-	clientOptions.SetUsername(reportTask.Username)
-	clientOptions.SetPassword(reportTask.Password)
+	clientOptions.SetClientID(config.Cloud.ClientId)
+	clientOptions.SetUsername(config.Cloud.Username)
+	clientOptions.SetPassword(config.Cloud.Password)
 
-	zap.S().Info("mqtt链接设置："+reportTask.Ip, " ", reportTask.Port, " ", reportTask.ClientID, " ", clientOptions)
+	zap.S().Info("mqtt链接设置：" + uri)
 
 	// 不使用短线重连机制，自己开线程检测系统在线情况
 	clientOptions.SetAutoReconnect(false)
