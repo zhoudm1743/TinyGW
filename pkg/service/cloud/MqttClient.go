@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
 	"github.com/patrickmn/go-cache"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"tinyGW/app/api/repository"
+	"tinyGW/app/models"
 	"tinyGW/pkg/service/collect"
 	"tinyGW/pkg/service/collect/worker"
 	"tinyGW/pkg/service/conf"
@@ -75,6 +77,43 @@ func InitMqttClient(
 		cache:                 cache,
 		eventBus:              eventBus,
 	}
+
+	MClient.eventBus.Subscribe("DeviceCollectFinish", func(e event.Event) {
+		device := e.Data.(models.Device)
+		nodes := make(map[string]interface{})
+		properties := make(map[string]interface{})
+		for _, property := range device.Type.Properties {
+			if property.Reported {
+				properties[property.Name] = property.Value
+				if property.AutoCalc {
+					name := fmt.Sprintf("%s_used", property.Name)
+					properties[name] = property.Used
+				}
+			}
+		}
+		dc := getDeviceCollector(device)
+		alarm := make(map[string]interface{})
+		alarm["status"] = device.AlarmStatus
+		alarm["reason"] = device.AlarmReason
+		alarm["time"] = device.AlarmTime
+		telemetry := make(map[string]interface{})
+		telemetry["ts"] = time.Now().Unix()
+		telemetry["values"] = properties
+		//telemetry["device"] = dv
+		telemetry["alarm"] = alarm
+
+		node := make([]map[string]interface{}, 1)
+		node[0] = telemetry
+		nodes[dc+"_"+device.Address] = node
+
+		report := make(map[string]interface{})
+		report["nodes"] = nodes
+		report["ts"] = time.Now().Unix()
+		report["clientId"] = conf.NewConfig().Cloud.ClientId
+		result, _ := json.Marshal(report)
+		MClient.Publish(result)
+	})
+
 	return MClient
 }
 
@@ -117,7 +156,7 @@ func (mc *Client) Publish(payload []byte) {
 		// 存盘返回
 		return
 	}
-
+	zap.S().Info("MqttClient.Publish 上报数据：" + string(payload))
 	if token := mc.client.Publish("v1/gateway/telemetry", 2, false, payload); token.Wait() && token.Error() != nil {
 		zap.S().Error("上报数据失败！")
 		// 存盘返回
@@ -237,5 +276,18 @@ func (mc *Client) SendResponse(request worker.CommandRequest, response worker.Re
 	zap.S().Infof("正确响应RPC调用，主题：%s 响应: %v", responseTopic, commandResponse)
 	if token := mc.client.Publish(responseTopic, 0, false, commandResponse.ToJson()); token.Wait() && token.Error() != nil {
 		zap.S().Error("应答RPC调用失败！")
+	}
+}
+
+func getDeviceCollector(device models.Device) string {
+	switch device.Collector.Type {
+	case "Serial":
+		return device.Collector.Serial.Name
+	case "TcpServer":
+		return device.Collector.TcpServer.Name
+	case "TcpClient":
+		return device.Collector.TcpClient.Name
+	default:
+		return ""
 	}
 }

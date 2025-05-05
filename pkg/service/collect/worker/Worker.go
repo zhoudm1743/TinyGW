@@ -11,6 +11,7 @@ import (
 	"tinyGW/pkg/service/collect/channel"
 	"tinyGW/pkg/service/collect/collector"
 	"tinyGW/pkg/service/conf"
+	"tinyGW/pkg/service/event"
 	"tinyGW/pkg/service/script"
 )
 
@@ -33,12 +34,14 @@ type worker struct {
 	dataChan             chan []byte
 	stopChan             chan int
 	config               *conf.Config
+	eventBus             *event.EventService
 }
 
 func NewWorker(
 	domainCollector models.Collector,
 	deviceRepository repository.DeviceRepository,
 	config *conf.Config,
+	eventBus *event.EventService,
 ) Worker {
 	result := &worker{
 		PriorityChannel:  channel.NewPriorityChannel(),
@@ -48,6 +51,7 @@ func NewWorker(
 		dataChan:         make(chan []byte, 1024),
 		stopChan:         make(chan int, 1),
 		config:           config,
+		eventBus:         eventBus,
 	}
 	zap.S().Info("创建数据采集线程！", result.Collector)
 	// RPC 命令优先级高
@@ -343,17 +347,30 @@ func (w *worker) CollectExecutor(task any) {
 				zap.S().Error("超时退出")
 				device.AlarmStatus = true
 				device.AlarmTime = time.Now().Unix()
-				device.AlarmReason = "未上报读数"
+				device.AlarmReason = "未上报读数，超时退出"
 				device.AlarmTotal += 1
 				w.deviceRepository.Save(&device)
 				break
 			}
+		}
+		if !result && !continued {
+			device.AlarmStatus = true
+			device.AlarmTime = time.Now().Unix()
+			device.AlarmReason = "未上报读数, 解析失败"
+			device.AlarmTotal += 1
+			w.deviceRepository.Save(&device)
+			break
 		}
 		if !continued {
 			break
 		}
 		time.Sleep(time.Duration(w.Collector.GetInterval()) * time.Millisecond)
 	}
+
+	w.eventBus.Publish(event.Event{
+		Name: "DeviceCollectFinish",
+		Data: device,
+	})
 
 	zap.S().Info("结束采集设备:", device.Name)
 }

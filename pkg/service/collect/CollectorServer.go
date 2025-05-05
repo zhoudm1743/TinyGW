@@ -16,6 +16,7 @@ type (
 		collectors       *sync.Map
 		deviceRepository repository.DeviceRepository
 		config           *conf.Config
+		eventSrv         *event.EventService
 	}
 )
 
@@ -23,11 +24,13 @@ type (
 func NewCollectorServer(
 	deviceRepository repository.DeviceRepository,
 	config *conf.Config,
+	e *event.EventService,
 ) *CollectorServer {
 	return &CollectorServer{
 		collectors:       &sync.Map{},
 		deviceRepository: deviceRepository,
 		config:           config,
+		eventSrv:         e,
 	}
 }
 
@@ -55,7 +58,7 @@ func (cs *CollectorServer) Add(collector models.Collector) {
 	zap.S().Info("新增采集接口服务器", collector)
 	w := worker.NewWorker(
 		collector, cs.deviceRepository,
-		cs.config,
+		cs.config, cs.eventSrv,
 	)
 
 	w.Start()

@@ -58,8 +58,7 @@ func InitReportTaskServer(reportTaskServer *ReportTaskServer, repository reposit
 // Add 新增定时任务，如果定时任务是开启状态，则开启定时任务
 func (rts *ReportTaskServer) Add(task *models.ReportTask) {
 	zap.S().Info("新增定时任务", task)
-	location, _ := time.LoadLocation("Asia/Shanghai")
-	c := cron.New(cron.WithLocation(location))
+	c := cron.New()
 	c.AddFunc(task.Cron, rts.Send)
 	rts.tasks.Store(task.Name, c)
 
