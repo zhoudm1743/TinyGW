@@ -5,7 +5,7 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "错误：请以root用户执行此脚本" >&2; exit 1; }
 
 # 安装目录配置
-INSTALL_DIR="/www/wwwroot/zsxa"
+INSTALL_DIR="/www/wwwroot/tinyGW"
 mkdir -p "$INSTALL_DIR"
 
 # 依赖安装
@@ -40,15 +40,15 @@ install_deps() {
 install_deps
 
 echo "正在下载文件..."
-wget http://utils.zsxiao.cn/gateway/zsxagw.zip -O "$INSTALL_DIR/zsxagw.zip"
+wget http://utils.zsxiao.cn/gateway/tinyGW.zip -O "$INSTALL_DIR/tinyGW.zip"
 
 echo "正在解压文件..."
-unzip -qo "$INSTALL_DIR/zsxagw.zip" -d "$INSTALL_DIR" || { echo "解压失败" >&2; exit 1; }
+unzip -qo "$INSTALL_DIR/tinyGW.zip" -d "$INSTALL_DIR" || { echo "解压失败" >&2; exit 1; }
 
 # 配置管理模块
 CONFIG_DIR="$INSTALL_DIR/config"
 mkdir -p "$CONFIG_DIR"
-cp "$(dirname "$0")/config/config.yml" "$CONFIG_DIR/" || { echo "配置文件复制失败" >&2; exit 1; }
+cp "$(dirname "$0")/config/conf.yml" "$CONFIG_DIR/" || { echo "配置文件复制失败" >&2; exit 1; }
 
 # 交互式配置参数
 read -p "请输入网关ClientID（默认：zsxagwA001）: " gw_clientid
@@ -72,19 +72,19 @@ sed -i \
 -e "/^subscribe:/,/^$/ {/^    port:/ s/.*/    port: \"$sub_port\"/}" \
 -e "/^subscribe:/,/^$/ {/^    username:/ s/.*/    username: $sub_user/}" \
 -e "/^subscribe:/,/^$/ {/^    password:/ s/.*/    password: \"$sub_pass\"/}" \
-"$CONFIG_DIR/config.yml"
+"$CONFIG_DIR/conf.yml"
 
 # 设置权限
 chown -R root:root "$INSTALL_DIR"
 chmod 755 "$INSTALL_DIR"
-chmod +x "$INSTALL_DIR/zsxagw"
+chmod +x "$INSTALL_DIR/tinyGW"
 
 # 处理服务文件
-SERVICE_FILE="$INSTALL_DIR/zsxagw.service"
+SERVICE_FILE="$INSTALL_DIR/tinygw.service"
 if [[ -f "$SERVICE_FILE" ]]; then
     mv "$SERVICE_FILE" /etc/systemd/system/
     systemctl daemon-reload
-    systemctl enable --now zsxagw || { echo "服务启动失败" >&2; exit 1; }
+    systemctl enable --now tinygw || { echo "服务启动失败" >&2; exit 1; }
 else
     echo "警告：未找到服务文件，请手动配置" >&2
 fi

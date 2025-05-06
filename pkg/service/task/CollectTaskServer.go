@@ -4,6 +4,7 @@ import (
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 	"sync"
+	"time"
 	"tinyGW/app/api/repository"
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/collect"
@@ -62,7 +63,8 @@ func InitCollectTaskServer(collectTaskServer *CollectTaskServer, repository repo
 // Add 新增定时任务，如果定时任务是开启状态，则开启定时任务
 func (cts *CollectTaskServer) Add(task *models.CollectTask) {
 	zap.S().Info("新增定时任务", task)
-	c := cron.New()
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	c := cron.New(cron.WithLocation(loc))
 	currentDevices := task.DeviceList
 
 	_, err := c.AddFunc(task.Cron, func() {

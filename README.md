@@ -1,37 +1,135 @@
-# TinyGw
+# TinyGW 物联网网关
 
-#### 介绍
-go语言写的物联网网关，支持设备管理、数据采集、命令下发等操作.
+[![Go Version](https://img.shields.io/badge/go-1.19+-blue.svg)](https://golang.org/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-#### 软件架构
-软件架构说明
+物联网网关系统，支持通过485接口和TCP网桥进行设备数据采集，提供数据上报至物联网平台（XiaoCloud）和命令下发功能。
 
+## 功能特性
+- 多协议设备接入（Modbus RTU/TCP/MQTT/Serial）
+- 实时数据采集与边缘计算
+- 双向通信支持命令下发
+- 设备管理（型号管理、设备注册）
+- 任务调度（定时采集、数据上报）
+- 系统监控与远程升级
 
-#### 安装教程
+## 技术栈
+### 核心组件
+- **开发语言**: Go 1.19+
+- **依赖注入**: Uber FX
+- **Web框架**: Gin v1.9.1
+- **数据库**: BoltDB 1.3.10
+- **任务调度**: Cron v3.0.1
+- **MQTT客户端**: Eclipse Paho v1.4.0
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 开发工具
+- 脚本引擎：Go Lua 1.0.0
+- 日志系统：Zap 1.24.0
 
-#### 使用说明
+## 快速开始
+### 环境准备
+1. 安装 Go 1.19+ 和 Node.js 16+ 和 lua5.4 环境
+2. 安装 UPX 压缩工具（可选）
+3. 配置 XiaoCloud 1.6.1+ 实例
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+### 安装依赖
+```bash
+# 后端依赖
+cd energy-saas-gateway
+go mod download
 
-#### 参与贡献
+# 前端依赖
+cd webapp
+npm install --registry=https://registry.npmmirror.com
+```
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+### 配置说明
+复制示例配置文件并修改参数：
+```bash
+cp config/conf.example.yml config/conf.yml
+```
+主要配置项：
+- `mqtt.broker`: XiaoCloud MQTT 地址
+- `gateway.id`: 网关设备标识
+- `collect.interval`: 默认采集间隔
 
+## 开发指南
+### 编译运行
+```bash
+# 启动后端服务
+go run main.go
 
-#### 特技
+# 启动前端开发服务器
+cd webapp
+npm run dev
+```
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+### 测试验证
+```bash
+# 运行单元测试
+go test ./...
+
+# 接口测试
+curl http://localhost:8080/api/healthcheck
+```
+
+## 部署流程
+### 生产环境构建
+```bash
+# 构建Linux可执行文件
+./build-linux.sh
+
+# 构建ARM系统可执行文件
+./build-arm.bat
+```
+
+### 容器化部署
+```Dockerfile
+FROM golang:1.19-alpine AS builder
+RUN apk add --no-cache upx
+WORKDIR /app
+COPY . .
+RUN go build -ldflags "-s -w" -o tinyGW && \
+    upx --best tinyGW
+
+FROM alpine:3.17
+COPY --from=builder /app/tinyGW /app/config.yml /app/webroot/
+EXPOSE 8080
+CMD ["/app/tinyGW"]
+```
+
+## 文档目录
+- [系统架构文档](./doc/architecture.md)
+- [API接口规范](./doc/ts004-WebApi.md)
+- [设备接入指南](./doc/device-integration.md)
+
+## 项目结构
+```
+energy-saas-gateway/
+├── api/               # API接口层
+│   ├── controller/    # HTTP控制器
+│   ├── domain/        # 领域模型
+│   ├── repository/    # 数据持久层
+│   ├── routes/        # 路由配置
+│   └── service/       # 业务服务
+├── core/              # 核心模块
+│   ├── config/        # 配置管理
+│   ├── database/      # 数据库连接
+│   ├── mqtt/          # MQTT客户端
+│   ├── task/          # 定时任务
+│   └── web/           # Web服务
+├── doc/               # 项目文档
+├── plugin/            # 设备协议插件
+│   └── DDSU5886/      # 电表协议实现
+├── bootstrap/         # 应用初始化
+├── release/           # 构建输出
+└── util/              # 通用工具
+
+主要配置文件：
+- config/conf.yml    # 应用配置
+- tinyGW.service       # 系统服务配置
+```
+
+## 许可证
+[MIT License](LICENSE)
+
