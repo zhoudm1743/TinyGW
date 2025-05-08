@@ -217,7 +217,7 @@ func setInstruments(params map[string]interface{}, client Client) (int, interfac
 				return 1, nil
 			}
 		}
-		instrument.Type = &deviceType
+		instrument.Type = deviceType
 		collector, err := client.collectorRepository.Find(cn)
 		if err != nil {
 			var coll models.Collector
@@ -228,7 +228,7 @@ func setInstruments(params map[string]interface{}, client Client) (int, interfac
 			}
 			collector = coll
 		}
-		instrument.Collector = &collector
+		instrument.Collector = collector
 		if err := client.deviceRepository.Save(&instrument); err != nil {
 			color.Redln("RPC设置仪表失败: 保存设备时发生错误, ERROR: %v", err)
 			return 1, nil

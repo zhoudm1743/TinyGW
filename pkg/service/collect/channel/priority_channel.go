@@ -1,7 +1,5 @@
 package channel
 
-import "go.uber.org/fx"
-
 // PriorityChannel 具有优先级的双通道
 type PriorityChannel interface {
 	Start()                                // 开启任务
@@ -13,9 +11,7 @@ type PriorityChannel interface {
 	NormalTaskIsFull() bool                // 采集任务队列是否已满
 }
 
-//var _ PriorityChannel = (*priorityChannel)(nil)
-
-var Module = fx.Provide(NewPriorityChannel)
+var _ PriorityChannel = (*priorityChannel)(nil)
 
 type priorityChannel struct {
 	priorChan    chan any
@@ -27,8 +23,8 @@ type priorityChannel struct {
 
 func NewPriorityChannel() PriorityChannel {
 	return &priorityChannel{
-		priorChan:  make(chan any, 2048),
-		normalChan: make(chan any, 12800),
+		priorChan:  make(chan any, 1280),
+		normalChan: make(chan any, 99999),
 		stopChan:   make(chan struct{}, 1),
 	}
 }
@@ -40,6 +36,7 @@ func (pc *priorityChannel) Start() {
 func (pc *priorityChannel) Stop() {
 	pc.stopChan <- struct{}{}
 }
+
 func (pc *priorityChannel) DispatchPriorTask(task any) {
 	pc.priorChan <- task
 }
@@ -57,7 +54,7 @@ func (pc *priorityChannel) SetNormalWorker(worker func(task any)) {
 }
 
 func (pc *priorityChannel) NormalTaskIsFull() bool {
-	return len(pc.normalChan) >= 12800
+	return len(pc.normalChan) >= 128000
 }
 
 // Worker1 算法参见：https://blog.csdn.net/hurray123/article/details/50038329/
@@ -103,3 +100,5 @@ func (pc *priorityChannel) Worker() {
 		}
 	}
 }
+
+var _ PriorityChannel = (*priorityChannel)(nil)

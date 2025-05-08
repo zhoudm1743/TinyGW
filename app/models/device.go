@@ -2,10 +2,10 @@ package models
 
 type Device struct {
 	Model
-	Name      string      `gorm:"type:varchar(255);primary_key;" json:"name"`
-	Type      *DeviceType `json:"type" gorm:"type:json;serializer:json"`                      // 设备类型
-	Address   string      `json:"address" gorm:"type:varchar(255);index:idx_devices_address"` // 通讯地址
-	Collector *Collector  `json:"collector" gorm:"type:json;serializer:json"`
+	Name      string     `gorm:"type:varchar(255);primary_key;" json:"name"`
+	Type      DeviceType `json:"type" gorm:"type:json;serializer:json"`                      // 设备类型
+	Address   string     `json:"address" gorm:"type:varchar(255);index:idx_devices_address"` // 通讯地址
+	Collector Collector  `json:"collector" gorm:"type:json;serializer:json"`
 	// Alone、Serial 可根据实际情况去掉，即一个采集接口有【固定】的波特率和驱动程序-----------
 	Alone  bool   `json:"alone"` // 独立开关
 	Serial Serial `json:"serial" gorm:"type:json;serializer:json"`

@@ -143,8 +143,4 @@ func (cts *CollectTaskServer) Collect(ds []string) {
 		}
 	}
 	zap.S().Info("采集结束：CollectTaskServer->Collect")
-	//cts.event.Publish(event.Event{
-	//	Name: "CollectTask_CollectFinish",
-	//	Data: ds,
-	//})
 }

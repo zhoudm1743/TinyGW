@@ -42,16 +42,18 @@ func NewWorker(
 	deviceRepository repository.DeviceRepository,
 	config *conf.Config,
 	eventBus *event.EventService,
+	deviceTypeRepository repository.DeviceTypeRepository,
 ) Worker {
 	result := &worker{
-		PriorityChannel:  channel.NewPriorityChannel(),
-		Collector:        collector.ConnectorFactory(domainCollector),
-		Runner:           script.NewLuaRunner(),
-		deviceRepository: deviceRepository,
-		dataChan:         make(chan []byte, 1024),
-		stopChan:         make(chan int, 1),
-		config:           config,
-		eventBus:         eventBus,
+		PriorityChannel:      channel.NewPriorityChannel(),
+		Collector:            collector.ConnectorFactory(domainCollector),
+		Runner:               script.NewLuaRunner(),
+		deviceRepository:     deviceRepository,
+		dataChan:             make(chan []byte, 1024),
+		stopChan:             make(chan int, 1),
+		config:               config,
+		eventBus:             eventBus,
+		deviceTypeRepository: deviceTypeRepository,
 	}
 	zap.S().Info("创建数据采集线程！", result.Collector)
 	// RPC 命令优先级高
@@ -118,15 +120,10 @@ func (w *worker) CollectExecutor(task any) {
 		zap.S().Error("数据采集执行器无法转换Device参数")
 		return
 	}
-	zap.S().Info("开始采集设备: ", device.Name)
-
-	// 备份 device（通过序列化，反序列化深度复制）
-	tempBuff, _ := json.Marshal(device)
-	deviceCopy := models.Device{}
-	_ = json.Unmarshal(tempBuff, &deviceCopy)
+	jsonData, _ := json.Marshal(device)
+	zap.S().Info("开始采集设备: ", string(jsonData))
 	driverName := device.Type.Driver
 	// 打开驱动
-	//color.Redln("开始打开设备驱动！", device.Type.Driver)
 	if len(driverName) <= 0 {
 		find, err := w.deviceTypeRepository.Find(device.Type.Name)
 		if err != nil {
@@ -143,7 +140,10 @@ func (w *worker) CollectExecutor(task any) {
 		w.Collector.Open(&device)
 		defer w.Collector.Close()
 	}
-
+	// 备份 device（通过序列化，反序列化深度复制）
+	tempBuff, _ := json.Marshal(device)
+	deviceCopy := models.Device{}
+	_ = json.Unmarshal(tempBuff, &deviceCopy)
 	// 数据读取，超过30次，自动退出
 	for step := 0; step < 30; step++ {
 		data, result, continued := w.Runner.GenerateGetRealVariables(device.Address, step)
@@ -205,10 +205,13 @@ func (w *worker) CollectExecutor(task any) {
 												if val < copyVal {
 													alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！比上次读数[%02f]要小!", temp.Name, val, copyVal))
 												}
-												plusVal := copyVal + temp.Threshold
-												if val > plusVal {
-													alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！读数超出预警值!", temp.Name, val, plusVal))
+												if temp.Threshold > 0 {
+													plusVal := copyVal + temp.Threshold
+													if val > plusVal {
+														alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！读数超出预警值!", temp.Name, val, plusVal))
+													}
 												}
+
 											}
 										}
 										if len(alarmStr) > 0 {
@@ -287,9 +290,11 @@ func (w *worker) CollectExecutor(task any) {
 												if val < copyVal {
 													alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！比上次读数[%02f]要小!", temp.Name, val, copyVal))
 												}
-												plusVal := copyVal + temp.Threshold
-												if val > plusVal {
-													alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！读数超出预警值!", temp.Name, val, plusVal))
+												if temp.Threshold > 0 {
+													plusVal := copyVal + temp.Threshold
+													if val > plusVal {
+														alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！读数超出预警值!", temp.Name, val, plusVal))
+													}
 												}
 											}
 										}
@@ -500,9 +505,11 @@ func (w *worker) CommandExecutor(task any) {
 													if val < copyVal {
 														alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！比上次读数[%02f]要小!", temp.Name, val, copyVal))
 													}
-													plusVal := copyVal + temp.Threshold
-													if val > plusVal {
-														alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！读数超出预警值!", temp.Name, val, plusVal))
+													if temp.Threshold > 0 {
+														plusVal := copyVal + temp.Threshold
+														if val > plusVal {
+															alarmStr = append(alarmStr, fmt.Sprintf("%s:%02f 读数异常！读数超出预警值!", temp.Name, val, plusVal))
+														}
 													}
 												}
 											}

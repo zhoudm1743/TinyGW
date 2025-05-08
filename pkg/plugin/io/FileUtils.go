@@ -122,7 +122,7 @@ func DownloadFile(sourceFile, targetFile string) {
 	OsCommand("wget -O " + targetFile + " " + remoteFile.String())
 }
 
-func ReadLastNLines(path string, n int) ([]byte, error) {
+func ReadLastNLines(path string, n int) ([]string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -177,5 +177,5 @@ func ReadLastNLines(path string, n int) ([]byte, error) {
 		lines = lines[len(lines)-n:]
 	}
 
-	return []byte(strings.Join(lines, "\n")), nil
+	return lines, nil
 }

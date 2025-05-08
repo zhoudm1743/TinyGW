@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/eclipse/paho.mqtt.golang"
+	"github.com/gookit/color"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"math/rand"
@@ -79,8 +80,12 @@ func (mc *Server) Publish(clientID string, payload []byte) error {
 		// 存盘返回
 		return fmt.Errorf("无Mqtt.Client连接，无法上报数据。")
 	}
+	cfg := conf.NewConfig()
+	cid := cfg.Cloud.ClientId
 
-	if token := mc.client.Publish("/up/gateway/publish/"+clientID, 0, false, payload); token.Wait() && token.Error() != nil {
+	topic := fmt.Sprintf("/up/gateway/%s/subscription/%s", cid, clientID)
+	color.Redln("Publish topic:", topic)
+	if token := mc.client.Publish(topic, 0, false, payload); token.Wait() && token.Error() != nil {
 		zap.S().Error("上报数据失败！")
 		return token.Error()
 	}
@@ -94,11 +99,16 @@ func (mc *Server) Publish(clientID string, payload []byte) error {
 */
 
 func onConnectHandler(client mqtt.Client) {
+	cfg := conf.NewConfig()
+	cid := cfg.Cloud.ClientId
 	// 订阅
-	if token := client.Subscribe("/up/gateway/publish/+", 0, Mclient.onSubscriptionHandler); token.Wait() && token.Error() != nil {
+	publishTopic := fmt.Sprintf("/up/gateway/%s/publish/+", cid)
+	// 订阅
+	if token := client.Subscribe(publishTopic, 0, Mclient.onSubscriptionHandler); token.Wait() && token.Error() != nil {
 		zap.S().Error("MqttClient：订阅失败！")
 	}
-	if token := client.Subscribe("/up/gateway/close/+", 0, Mclient.onSubscriptionHandler); token.Wait() && token.Error() != nil {
+	closeTopic := fmt.Sprintf("/up/gateway/%s/close/+", cid)
+	if token := client.Subscribe(closeTopic, 0, Mclient.onSubscriptionHandler); token.Wait() && token.Error() != nil {
 		zap.S().Error("MqttClient：订阅失败！")
 	}
 	//// 广播一个消息看看

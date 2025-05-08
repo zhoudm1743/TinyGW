@@ -208,59 +208,58 @@ func (mc *Client) receiveMessageHandler(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 	// 3. 处理命令 ...
-	go func() {
-		commandRequest.RequestID = ""
-		topicToken := strings.Split(msg.Topic(), "/")
-		if len(topicToken) == 6 {
-			commandRequest.RequestID = topicToken[5]
+
+	commandRequest.RequestID = ""
+	topicToken := strings.Split(msg.Topic(), "/")
+	if len(topicToken) == 6 {
+		commandRequest.RequestID = topicToken[5]
+	}
+	if commandRequest.RequestID == "" {
+		zap.S().Errorf("主题中不包含请求ID：%s", msg.Topic())
+		return
+	}
+
+	commandResponse := worker.ResponseParam{
+		ClientID: clientId,
+		CmdName:  commandRequest.Params[0].CmdName,
+	}
+
+	switch strings.ToLower(commandRequest.Method) {
+	case "gateway":
+		command, ok := GatewayCommand[commandRequest.Params[0].CmdName]
+		if ok {
+			status, devs := command(commandRequest.Params[0].CmdParams, *mc)
+			commandResponse.CmdStatus = status
+			commandResponse.CmdResult = devs
+			mc.SendResponse(commandRequest, commandResponse)
+		} else {
+			commandResponse.CmdStatus = 1
+			commandResponse.CmdResult = "不支持gateway." + commandResponse.CmdName + "命令"
 		}
-		if commandRequest.RequestID == "" {
-			zap.S().Errorf("主题中不包含请求ID：%s", msg.Topic())
-			return
+	case "instrument":
+		commandRequest.ResponseParamChan = make(chan worker.ResponseParam, 1)
+		if len(commandRequest.Params) < 1 {
+			zap.S().Error("对设备的RPC操作缺少请求参数params")
+			break
 		}
 
-		commandResponse := worker.ResponseParam{
-			ClientID: clientId,
-			CmdName:  commandRequest.Params[0].CmdName,
+		deviceName := commandRequest.Params[0].DeviceName
+		work, ok := mc.collectorServer.FindByDeviceName(deviceName)
+		if ok {
+			work.CommandTask(commandRequest)
+			responseParam := <-commandRequest.ResponseParamChan
+			mc.SendResponse(commandRequest, responseParam)
+		} else {
+			commandResponse.DeviceName = deviceName
+			commandResponse.CmdStatus = 1
+			commandResponse.Err = fmt.Sprintf("网关[%s]不存在采集器：%s, 请同步网关和采集器配置.", clientId, deviceName)
+			mc.SendResponse(commandRequest, commandResponse)
 		}
 
-		switch strings.ToLower(commandRequest.Method) {
-		case "gateway":
-			command, ok := GatewayCommand[commandRequest.Params[0].CmdName]
-			if ok {
-				status, devs := command(commandRequest.Params[0].CmdParams, *mc)
-				commandResponse.CmdStatus = status
-				commandResponse.CmdResult = devs
-				mc.SendResponse(commandRequest, commandResponse)
-			} else {
-				commandResponse.CmdStatus = 1
-				commandResponse.CmdResult = "不支持gateway." + commandResponse.CmdName + "命令"
-			}
-		case "instrument":
-			commandRequest.ResponseParamChan = make(chan worker.ResponseParam, 1)
-			if len(commandRequest.Params) < 1 {
-				zap.S().Error("对设备的RPC操作缺少请求参数params")
-				break
-			}
-
-			deviceName := commandRequest.Params[0].DeviceName
-			work, ok := mc.collectorServer.FindByDeviceName(deviceName)
-			if ok {
-				work.CommandTask(commandRequest)
-				responseParam := <-commandRequest.ResponseParamChan
-				mc.SendResponse(commandRequest, responseParam)
-			} else {
-				commandResponse.DeviceName = deviceName
-				commandResponse.CmdStatus = 1
-				commandResponse.Err = fmt.Sprintf("网关[%s]不存在采集器：%s, 请同步网关和采集器配置.", clientId, deviceName)
-				mc.SendResponse(commandRequest, commandResponse)
-			}
-
-			// color.Cyanln("设备操作请求处理完毕.")
-		default:
-			zap.S().Error("无效的方法：", commandRequest.Method)
-		}
-	}()
+		// color.Cyanln("设备操作请求处理完毕.")
+	default:
+		zap.S().Error("无效的方法：", commandRequest.Method)
+	}
 
 }
 

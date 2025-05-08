@@ -13,10 +13,11 @@ import (
 type (
 	// CollectorServer 采集接口服务器
 	CollectorServer struct {
-		collectors       *sync.Map
-		deviceRepository repository.DeviceRepository
-		config           *conf.Config
-		eventSrv         *event.EventService
+		collectors           *sync.Map
+		deviceRepository     repository.DeviceRepository
+		deviceTypeRepository repository.DeviceTypeRepository
+		config               *conf.Config
+		eventSrv             *event.EventService
 	}
 )
 
@@ -25,12 +26,14 @@ func NewCollectorServer(
 	deviceRepository repository.DeviceRepository,
 	config *conf.Config,
 	e *event.EventService,
+	deviceTypeRepository repository.DeviceTypeRepository,
 ) *CollectorServer {
 	return &CollectorServer{
-		collectors:       &sync.Map{},
-		deviceRepository: deviceRepository,
-		config:           config,
-		eventSrv:         e,
+		collectors:           &sync.Map{},
+		deviceRepository:     deviceRepository,
+		deviceTypeRepository: deviceTypeRepository,
+		config:               config,
+		eventSrv:             e,
 	}
 }
 
@@ -56,9 +59,14 @@ func InitCollectorServer(server *CollectorServer, repository repository.Collecto
 // Add 新增采集接口服务器
 func (cs *CollectorServer) Add(collector models.Collector) {
 	zap.S().Info("新增采集接口服务器", collector)
+	if len(collector.Name) == 0 {
+		zap.S().Error("新增采集接口服务器失败，名称不能为空")
+		return
+	}
 	w := worker.NewWorker(
 		collector, cs.deviceRepository,
 		cs.config, cs.eventSrv,
+		cs.deviceTypeRepository,
 	)
 
 	w.Start()

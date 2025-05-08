@@ -50,7 +50,7 @@ func (c deviceRepository) CollectorChanged(collector models.Collector) {
 	if devices, err := c.FindAll(); err == nil {
 		for _, device := range devices {
 			if device.Collector.Name == collector.Name {
-				device.Collector = &collector
+				device.Collector = collector
 				c.Save(&device)
 			}
 		}
@@ -61,7 +61,7 @@ func (c deviceRepository) DeviceTypeChanged(deviceType models.DeviceType) {
 	if devices, err := c.FindAll(); err == nil {
 		for _, device := range devices {
 			if device.Type.Name == deviceType.Name {
-				device.Type = &deviceType
+				device.Type = deviceType
 				c.Save(&device)
 			}
 		}
