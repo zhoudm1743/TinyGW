@@ -2,18 +2,20 @@ package conf
 
 import (
 	"fmt"
+
 	"github.com/spf13/viper"
 	"go.uber.org/fx"
 )
 
-var Version = "v20250503"
+var Version = "v20250527"
 
 func NewConfig() *Config {
 	defaultConfig := &Config{
 		Server: Server{
-			Port: 8080,
-			Host: "0.0.0.0",
-			Mode: "debug",
+			Port:     8080,
+			Host:     "0.0.0.0",
+			Mode:     "debug",
+			TcpPorts: "51483",
 		},
 		Cloud: Cloud{
 			Host:     "mqtt.zsxakj.com",

@@ -2,9 +2,6 @@ package boot
 
 import (
 	"context"
-	"go.uber.org/fx"
-	"go.uber.org/zap"
-	"gorm.io/gorm"
 	"tinyGW/app/api"
 	"tinyGW/pkg/plugin/io"
 	"tinyGW/pkg/service/cache"
@@ -20,6 +17,10 @@ import (
 	"tinyGW/pkg/service/script"
 	"tinyGW/pkg/service/subscription"
 	"tinyGW/pkg/service/task"
+
+	"go.uber.org/fx"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 var Module = fx.Options(

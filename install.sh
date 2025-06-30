@@ -40,7 +40,7 @@ install_deps() {
 install_deps
 
 echo "正在下载文件..."
-wget http://utils.zsxiao.cn/gateway/tinyGW.zip -O "$INSTALL_DIR/tinyGW.zip"
+wget http://utils.zsxiao.cn/tinygw/tinyGW.zip -O "$INSTALL_DIR/tinyGW.zip"
 
 echo "正在解压文件..."
 unzip -qo "$INSTALL_DIR/tinyGW.zip" -d "$INSTALL_DIR" || { echo "解压失败" >&2; exit 1; }
@@ -67,7 +67,7 @@ sub_port=${sub_port:-1883}
 
 # 更新配置文件
 sed -i \
--e "/^gateway:/,/^$/ {/^    clientid:/ s/.*/    clientid: $gw_clientid/}" \
+-e "/^cloud:/,/^$/ {/^    clientid:/ s/.*/    clientid: $gw_clientid/}" \
 -e "/^subscribe:/,/^$/ {/^    ip:/ s/.*/    ip: $sub_ip/}" \
 -e "/^subscribe:/,/^$/ {/^    port:/ s/.*/    port: \"$sub_port\"/}" \
 -e "/^subscribe:/,/^$/ {/^    username:/ s/.*/    username: $sub_user/}" \

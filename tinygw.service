@@ -7,10 +7,11 @@ User=root
 Group=root
 Type=simple
 WorkingDirectory=/www/wwwroot/tinyGW
-ExecStart=/www/wwwroot/tinyGW/zsxagw
+ExecStart=/www/wwwroot/tinyGW/tinyGW
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
+LimitMEMLOCK=infinity
 
 [Install]
 WantedBy=multi-user.target

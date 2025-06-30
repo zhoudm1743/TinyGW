@@ -2,10 +2,11 @@ package collector
 
 import (
 	"bytes"
-	"go.uber.org/zap"
 	"net"
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/listener"
+
+	"go.uber.org/zap"
 )
 
 // TcpServerCollector 【网口采集器】，用于网桥设备
@@ -43,6 +44,7 @@ func (t TcpServerCollector) Read(data []byte) int {
 			data = []byte{}
 			return 0
 		}
+		zap.S().Debug("TcpServerCollector读取数据成功!", string(data[:cnt]))
 		return cnt
 	}
 	return 0

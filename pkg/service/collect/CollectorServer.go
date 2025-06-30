@@ -1,13 +1,14 @@
 package collect
 
 import (
-	"go.uber.org/zap"
 	"sync"
 	"tinyGW/app/api/repository"
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/collect/worker"
 	"tinyGW/pkg/service/conf"
 	"tinyGW/pkg/service/event"
+
+	"go.uber.org/zap"
 )
 
 type (

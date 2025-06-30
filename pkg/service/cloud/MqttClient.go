@@ -112,6 +112,13 @@ func InitMqttClient(
 		report["clientId"] = conf.NewConfig().Cloud.ClientId
 		result, _ := json.Marshal(report)
 		MClient.Publish(result)
+		if device.AlarmStatus {
+			device.AlarmStatus = false
+			device.AlarmReason = ""
+			device.AlarmTime = 0
+			device.AlarmTotal = 0
+			MClient.deviceRepository.Save(&device)
+		}
 	})
 
 	return MClient
@@ -279,14 +286,21 @@ func (mc *Client) SendResponse(request worker.CommandRequest, response worker.Re
 }
 
 func getDeviceCollector(device models.Device) string {
-	switch device.Collector.Type {
-	case "Serial":
-		return device.Collector.Serial.Name
-	case "TcpServer":
-		return device.Collector.TcpServer.Name
-	case "TcpClient":
-		return device.Collector.TcpClient.Name
-	default:
-		return ""
+	if len(device.Collector.Address) == 0 {
+		switch device.Collector.Type {
+		case "Mqtt":
+			return device.Collector.Mqtt.Name
+		case "Serial":
+			return device.Collector.Serial.Name
+		case "TcpServer":
+			return device.Collector.TcpServer.Name
+		case "TcpClient":
+			return device.Collector.TcpClient.Name
+		case "Channel":
+			return device.Collector.Channel.Name
+		default:
+			return ""
+		}
 	}
+	return device.Collector.Address
 }

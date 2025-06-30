@@ -17,6 +17,7 @@ server:
     host: 0.0.0.0
     module: debug
     port: 1883
+    tcpPorts: "51483,51484,51485"
 subscribe:
     host: mqtt.zsxakj.com
     password: "123456"

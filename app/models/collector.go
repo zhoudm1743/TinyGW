@@ -37,6 +37,7 @@ type Collector struct {
 	Model
 	Name      string    `gorm:"type:varchar(255);primary_key;" json:"name"`
 	Type      string    `json:"type" gorm:"type:varchar(255);not null;index:idx_collector_type"` // 接口类型Serial或TcpClient或TcpServer或Mqtt或Channel
+	Address   string    `json:"address" gorm:"type:varchar(255);index:idx_collector_address"`    // 地址
 	Serial    Serial    `json:"serial" gorm:"type:json;serializer:json"`                         // 串口
 	TcpClient TcpClient `json:"tcpClient" gorm:"type:json;serializer:json"`                      // Tcp客户端
 	TcpServer TcpServer `json:"tcpServer" gorm:"type:json;serializer:json"`                      // Tcp服务端

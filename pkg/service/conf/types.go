@@ -27,9 +27,10 @@ type Serial struct {
 }
 
 type Server struct {
-	Port int    `yaml:"port" json:"port"`
-	Host string `yaml:"host" json:"host"`
-	Mode string `yaml:"module" json:"module"`
+	Port     int    `yaml:"port" json:"port"`
+	Host     string `yaml:"host" json:"host"`
+	Mode     string `yaml:"module" json:"module"`
+	TcpPorts string `yaml:"tcpPorts" json:"tcpPorts"` // TCP服务器端口列表，以逗号分隔
 }
 
 type Cloud struct {
