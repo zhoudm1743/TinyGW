@@ -31,6 +31,10 @@ type Channel struct {
 	Name string `json:"name"` // 名称
 }
 
+type FourGPRS struct {
+	Name string `json:"name"` // 名称
+}
+
 // Collector 采集接口，目前包含本地串口、TcpClient，Mqtt，Channel
 // 其中Serial、TcpClient、TcpServer、Mqtt、Channel为json格式，需要解析为对应的结构体
 type Collector struct {
@@ -43,6 +47,7 @@ type Collector struct {
 	TcpServer TcpServer `json:"tcpServer" gorm:"type:json;serializer:json"`                      // Tcp服务端
 	Mqtt      Mqtt      `json:"mqtt" gorm:"type:json;serializer:json"`                           // Mqtt
 	Channel   Channel   `json:"channel" gorm:"type:json;serializer:json"`                        // 通道
+	FourGPRS  FourGPRS  `json:"fouGPRS" gorm:"type:json;serializer:json"`                        // 4G模块
 	Timeout   int       `json:"timeout"`                                                         // 超时
 	Interval  int       `json:"interval"`                                                        // 间隔
 }

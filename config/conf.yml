@@ -2,9 +2,11 @@ cloud:
     clientid: zsxagwA001
     host: mqtt.zsxakj.com
     ip: mqtt.zsxakj.com
-    password: xakj1PnGD8y#s$
+    # password: xakj1PnGD8y#s$
     port: 1883
-    username: energy-cloud
+    # username: energy-cloud
+    password: "123456"
+    username: bgscs
 logger:
     filename: public/logs/energy.log
     level: debug

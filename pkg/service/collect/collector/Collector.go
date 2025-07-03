@@ -32,6 +32,10 @@ func ConnectorFactory(collector models.Collector) Collector {
 		return &MqttCollector{
 			Collector: collector,
 		}
+	case "fouGPRS", "FourGPRS":
+		return &FourGDirectCollector{
+			Collector: collector,
+		}
 	}
 
 	return nil
