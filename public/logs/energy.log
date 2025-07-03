@@ -29200,3 +29200,27 @@ stack traceback:
 2025-07-03T16:56:39.653+0800	DEBUG	listener/zdm.go:356	已发送心跳确认响应: 053040961
 2025-07-03T16:56:40.644+0800	DEBUG	collector/FourGDirect.go:116	FourGDirectCollector.Read: 从设备 053040961 读取 139 字节数据: [68 0e 02 0e 02 68 ca 30 05 01 a0 01 10 7c 00 00 20 1f 00 13 00 00 00 01 00 00 ff 00 6b 00 fd 00 67 00 00 00 00 12 00 01 20 25 05 30 00 01 00 02 25 07 03 04 16 57 00 00 14 00 10 00 15 21 82 00 16 00 00 00 17 00 00 00 18 00 00 00 00 19 00 00 00 00 1a 00 00 00 00 1b 00 00 00 00 1c 00 00 00 00 1d 00 00 00 00 1e 00 00 00 00 27 00 00 07 19 00 28 00 00 07 19 00 29 00 00 00 00 00 2a 00 00 00 00 00 2b 00 00 00 00 67 b8 16]
 2025-07-03T16:56:48.375+0800	INFO	listener/zdm.go:877	设备统计 - 在线:1, 登录:1, 心跳:6, 响应:7, 错误:0, 断开:0, 运行时间:151s
+2025-07-03T16:57:10.774+0800	INFO	listener/zdm.go:215	TcpServer接收数据:  [68 0e 02 0e 02 68 ca 30 05 01 a0 01 10 7c 00 00 20 1f 00 13 00 00 00 01 00 00 ff 00 6b 00 fd 00 67 00 00 00 00 12 00 01 20 25 05 30 00 01 00 02 25 07 03 04 16 57 00 00 14 00 10 00 15 21 82 00 16 00 00 00 17 00 00 00 18 00 00 00 00 19 00 00 00 00 1a 00 00 00 00 1b 00 00 00 00 1c 00 00 00 00 1d 00 00 00 00 1e 00 00 00 00 27 00 00 07 19 00 28 00 00 07 19 00 29 00 00 00 00 00 2a 00 00 00 00 00 2b 00 00 00 00 67 b8 16]
+2025-07-03T16:57:10.774+0800	INFO	listener/zdm.go:235	检测到协议类型: Q3761-1376 数据长度: 139
+2025-07-03T16:57:10.781+0800	DEBUG	listener/zdm.go:250	快速提取设备地址: 053040961 (原始数据: [68 0e 02 0e 02 68 ca 30 05 01 a0 01])
+2025-07-03T16:57:10.781+0800	INFO	listener/zdm.go:261	数据解析成功，协议: Q3761-1376 设备地址: 053040961
+2025-07-03T16:57:10.781+0800	INFO	listener/zdm.go:284	收到数据转发帧: AFN=10, DT1=20, DT2=1F
+2025-07-03T16:57:10.781+0800	DEBUG	listener/zdm.go:333	收到设备心跳: 053040961
+2025-07-03T16:57:10.782+0800	DEBUG	listener/zdm.go:853	更新设备心跳: 053040961
+2025-07-03T16:57:10.782+0800	DEBUG	listener/zdm.go:341	生成快速心跳确认响应，设备: 053040961, 响应长度: 20
+2025-07-03T16:57:10.782+0800	DEBUG	listener/zdm.go:581	发送响应成功: 长度=20, 内容=[68 32 00 32 00 68 00 30 05 01 a0 01 00 c0 00 00 01 00 98 16]
+2025-07-03T16:57:10.782+0800	DEBUG	listener/zdm.go:356	已发送心跳确认响应: 053040961
+2025-07-03T16:57:18.374+0800	INFO	listener/zdm.go:877	设备统计 - 在线:1, 登录:1, 心跳:7, 响应:8, 错误:0, 断开:0, 运行时间:181s
+2025-07-03T16:57:18.877+0800	INFO	fxevent/zap.go:51	received signal	{"signal": "INTERRUPT"}
+2025-07-03T16:57:18.877+0800	INFO	fxevent/zap.go:51	OnStop hook executing	{"callee": "tinyGW/boot.setup.func4()", "caller": "tinyGW/boot.setup"}
+2025-07-03T16:57:18.877+0800	INFO	boot/boot.go:93	停止监听线程
+2025-07-03T16:57:18.877+0800	INFO	cloud/MqttClient.go:150	MClient.Disconnect 关闭服务器连接！
+2025-07-03T16:57:18.879+0800	ERROR	listener/zdm.go:140	Accept error: accept tcp [::]:51483: use of closed network connection
+2025-07-03T16:57:18.879+0800	ERROR	listener/zdm.go:140	Accept error: accept tcp [::]:51484: use of closed network connection
+2025-07-03T16:57:18.879+0800	ERROR	listener/zdm.go:140	Accept error: accept tcp [::]:51485: use of closed network connection
+2025-07-03T16:57:18.880+0800	ERROR	subscription/MqttServer.go:71	MServer.Disconnect 关闭服务器连接！
+2025-07-03T16:57:18.880+0800	INFO	fxevent/zap.go:51	OnStop hook executed	{"callee": "tinyGW/boot.setup.func4()", "caller": "tinyGW/boot.setup", "runtime": "2.5792ms"}
+2025-07-03T16:57:18.880+0800	INFO	fxevent/zap.go:51	OnStop hook executing	{"callee": "tinyGW/boot.setup.func2()", "caller": "tinyGW/boot.setup"}
+2025-07-03T16:57:18.880+0800	ERROR	boot/boot.go:78	停止Web服务器
+2025-07-03T16:57:18.881+0800	INFO	event/service.go:180	Shutting down event service
+2025-07-03T16:57:18.881+0800	INFO	fxevent/zap.go:51	OnStop hook executed	{"callee": "tinyGW/boot.setup.func2()", "caller": "tinyGW/boot.setup", "runtime": "535.6µs"}
