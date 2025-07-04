@@ -28,6 +28,9 @@ type OnlineDevice struct {
 	RemoteAddr    string    // 远程地址
 }
 
+// DataCallback 数据回调函数类型
+type DataCallback func(deviceAddr string, data []byte)
+
 var (
 	listeners []net.Listener  // 修改为监听器切片，支持多端口
 	stopChans []chan struct{} // 每个监听器对应一个停止信号通道
@@ -46,6 +49,10 @@ var (
 
 	// 连接断开统计
 	disconnectionCount int64
+
+	// 数据回调函数管理
+	dataCallbacks     = make(map[string]DataCallback) // 设备地址 -> 回调函数
+	dataCallbackMutex sync.RWMutex
 )
 
 func Start() {
@@ -95,6 +102,9 @@ func Start() {
 	if useOptimized {
 		go startPerformanceStats()
 	}
+
+	// 初始化3761-BY事件处理函数
+	Init3761EventHandlers()
 
 	// 初始化监听器和停止信号通道
 	listeners = make([]net.Listener, 0, len(ports))
@@ -192,7 +202,7 @@ func handleConn(conn net.Conn) {
 			}
 
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				zap.S().Infoln("临时读取错误:", ne)
+				// zap.S().Infoln("临时读取错误:", ne)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -247,7 +257,7 @@ func handleData(b []byte, conn net.Conn) {
 	var deviceAddr string
 	if useOptimized && protocol == "Q3761-1376" {
 		deviceAddr = FastExtractDeviceAddr(b)
-		zap.S().Debugf("快速提取设备地址: %s (原始数据: [% 2x])", deviceAddr, b[:12])
+		// zap.S().Debugf("快速提取设备地址: %s (原始数据: [% 2x])", deviceAddr, b[:12])
 	} else {
 		deviceAddr = extractDeviceAddress(b, protocol, conn)
 		zap.S().Debugf("标准提取设备地址: %s", deviceAddr)
@@ -258,7 +268,7 @@ func handleData(b []byte, conn net.Conn) {
 	success := runner.AnalysisRx(deviceAddr, []models.DeviceProperty{}, b, len(b), &tempVariables)
 
 	if success {
-		zap.S().Infoln("数据解析成功，协议:", protocol, "设备地址:", deviceAddr)
+		// zap.S().Infoln("数据解析成功，协议:", protocol, "设备地址:", deviceAddr)
 
 		// 直接从原始数据检测帧类型（更可靠）
 		isLogin := false
@@ -277,11 +287,11 @@ func handleData(b []byte, conn net.Conn) {
 					zap.S().Infof("检测到F1登录帧: AFN=%02X, DT1=%02X, DT2=%02X", afn, dt1, dt2)
 				} else if (dt1 & 0x04) != 0 { // F3心跳
 					isHeartbeat = true
-					zap.S().Infof("检测到F3心跳帧: AFN=%02X, DT1=%02X, DT2=%02X", afn, dt1, dt2)
+					// zap.S().Infof("检测到F3心跳帧: AFN=%02X, DT1=%02X, DT2=%02X", afn, dt1, dt2)
 				}
 			} else if afn == 0x10 { // 数据转发
 				// AFN=10H的帧也需要确认回复，特别是F254主动上报数据
-				zap.S().Infof("收到数据转发帧: AFN=%02X, DT1=%02X, DT2=%02X", afn, dt1, dt2)
+				// zap.S().Infof("收到数据转发帧: AFN=%02X, DT1=%02X, DT2=%02X", afn, dt1, dt2)
 				// 将数据转发帧视为心跳，需要确认回复
 				isHeartbeat = true
 			}
@@ -294,7 +304,7 @@ func handleData(b []byte, conn net.Conn) {
 
 		// 处理登录请求
 		if isLogin {
-			zap.S().Infof("收到设备登录请求: %s", deviceAddr)
+			// zap.S().Infof("收到设备登录请求: %s", deviceAddr)
 			addOnlineDevice(deviceAddr, protocol, conn)
 
 			// 启动连接健康监控
@@ -302,10 +312,13 @@ func handleData(b []byte, conn net.Conn) {
 
 			// 发送登录确认响应 (AFN=00H F1 全部确认)
 			go func() {
+				// 添加延迟，避免与数据响应冲突
+				time.Sleep(50 * time.Millisecond)
+
 				var response []byte
 				if useOptimized && protocol == "Q3761-1376" {
 					response = GenerateFastConfirmResponse(deviceAddr)
-					zap.S().Debugf("生成快速确认响应，设备: %s, 响应长度: %d, 内容: [% 2x]", deviceAddr, len(response), response)
+					// zap.S().Debugf("生成快速确认响应，设备: %s, 响应长度: %d, 内容: [% 2x]", deviceAddr, len(response), response)
 					defer ReturnResponseToPool(response)
 				} else {
 					response = generateConfirmResponse(deviceAddr, protocol)
@@ -320,7 +333,7 @@ func handleData(b []byte, conn net.Conn) {
 							removeDeviceByAddr(deviceAddr)
 						}
 					} else {
-						zap.S().Infof("已发送登录确认响应: %s", deviceAddr)
+						// zap.S().Infof("已发送登录确认响应: %s", deviceAddr)
 					}
 				} else {
 					zap.S().Errorf("生成登录确认响应失败: %s", deviceAddr)
@@ -330,19 +343,22 @@ func handleData(b []byte, conn net.Conn) {
 
 		// 处理心跳请求
 		if isHeartbeat {
-			zap.S().Debugf("收到设备心跳: %s", deviceAddr)
+			// zap.S().Debugf("收到设备心跳: %s", deviceAddr)
 			updateHeartbeat(deviceAddr)
 
 			// 发送心跳确认响应 (AFN=00H F1 全部确认)
 			go func() {
+				// 添加延迟，避免与数据响应冲突
+				time.Sleep(50 * time.Millisecond)
+
 				var response []byte
 				if useOptimized && protocol == "Q3761-1376" {
 					response = GenerateFastConfirmResponse(deviceAddr)
-					zap.S().Debugf("生成快速心跳确认响应，设备: %s, 响应长度: %d", deviceAddr, len(response))
+					// zap.S().Debugf("生成快速心跳确认响应，设备: %s, 响应长度: %d, 设备Addr, len(response))
 					defer ReturnResponseToPool(response)
 				} else {
 					response = generateConfirmResponse(deviceAddr, protocol)
-					zap.S().Debugf("生成标准心跳确认响应，设备: %s, 响应长度: %d", deviceAddr, len(response))
+					// zap.S().Debugf("生成标准心跳确认响应，设备: %s, 响应长度: %d", deviceAddr, len(response))
 				}
 				if response != nil {
 					err := sendResponse(conn, response)
@@ -352,8 +368,6 @@ func handleData(b []byte, conn net.Conn) {
 						if isConnectionClosed(err) {
 							removeDeviceByAddr(deviceAddr)
 						}
-					} else {
-						zap.S().Debugf("已发送心跳确认响应: %s", deviceAddr)
 					}
 				} else {
 					zap.S().Errorf("生成心跳确认响应失败: %s", deviceAddr)
@@ -363,9 +377,95 @@ func handleData(b []byte, conn net.Conn) {
 
 		// 存储到数据库或上报到云端等其他处理
 		// 目前只是记录日志，后续可以根据需要扩展
+
+		// 处理3761-BY协议的F254主动上报事件
+		if protocol == "Q3761-1376" && len(b) >= 18 {
+			afn := b[12]
+			dt1 := b[16]
+			dt2 := b[17]
+
+			// 计算Fn值
+			fn := 0
+			if dt1 != 0 {
+				for i := 0; i < 8; i++ {
+					if (dt1 & (1 << i)) != 0 {
+						fn = int(dt2)*8 + (i + 1)
+						break
+					}
+				}
+			}
+
+			// 如果是F254主动上报数据，调用事件处理函数
+			if afn == 0x10 && fn == 254 {
+				zap.S().Infof("处理3761-BY F254主动上报事件: 设备=%s", deviceAddr)
+				Handle3761Event(deviceAddr, b)
+			}
+		}
+
+		// 通知数据回调函数（过滤掉确认响应）
+		if !isConfirmResponse(b) {
+			notifyDataCallbacks(deviceAddr, b)
+		} else {
+			zap.S().Debugf("过滤确认响应，不通知数据回调函数: 设备=%s, AFN=%02X", deviceAddr, b[12])
+		}
 	} else {
 		zap.S().Warnln("数据解析失败，协议:", protocol, "设备地址:", deviceAddr)
+
+		// 即使解析失败也通知回调函数，让上层决定如何处理（但也要过滤确认响应）
+		if !isConfirmResponse(b) {
+			notifyDataCallbacks(deviceAddr, b)
+		} else {
+			zap.S().Debugf("过滤确认响应，不通知数据回调函数: 设备=%s, AFN=%02X", deviceAddr, b[12])
+		}
 	}
+}
+
+// isConfirmResponse 判断是否为确认响应帧或主动上报数据
+func isConfirmResponse(data []byte) bool {
+	if len(data) < 13 {
+		return false
+	}
+
+	// 检查是否是Q3761-1376协议
+	if data[0] == 0x68 && len(data) >= 18 {
+		// 检查AFN字段
+		afn := data[12] // AFN在第13字节（索引12）
+
+		// AFN=00H是确认/否认帧
+		if afn == 0x00 {
+			return true
+		}
+
+		// AFN=10H是数据转发帧，需要检查Fn
+		if afn == 0x10 && len(data) >= 18 {
+			// DA1, DA2, DT1, DT2 在AFN之后
+			da1 := data[14] // DA1
+			da2 := data[15] // DA2
+			dt1 := data[16] // DT1
+			dt2 := data[17] // DT2
+
+			// 根据3761-BY.md文档计算Fn值
+			fn := 0
+			if dt1 != 0 {
+				// 找到DT1中为1的位
+				for i := 0; i < 8; i++ {
+					if (dt1 & (1 << i)) != 0 {
+						fn = int(dt2)*8 + (i + 1)
+						break
+					}
+				}
+			}
+
+			// F254 (0xFE) 是主动上报数据，需要特殊处理
+			if fn == 254 {
+				zap.S().Debugf("isConfirmResponse: 检测到F254主动上报数据，AFN=%02X, DA1=%02X, DA2=%02X, DT1=%02X, DT2=%02X, Fn=%d", afn, da1, da2, dt1, dt2, fn)
+				// 不返回true，让数据继续处理，在handleData中会调用事件处理函数
+				return false
+			}
+		}
+	}
+
+	return false
 }
 
 // detectProtocol 根据数据特征检测协议类型
@@ -850,7 +950,7 @@ func updateHeartbeatOptimized(deviceAddr string) {
 		device := value.(*FastDeviceInfo)
 		atomic.StoreInt64(&device.LastHeartbeat, time.Now().Unix())
 		atomic.AddInt64(&stats.HeartbeatCount, 1)
-		zap.S().Debugf("更新设备心跳: %s", deviceAddr)
+		// zap.S().Debugf("更新设备心跳: %s", deviceAddr)
 	}
 }
 
@@ -1027,18 +1127,15 @@ func monitorConnectionHealth(conn net.Conn, deviceAddr string) {
 		ticker := time.NewTicker(30 * time.Second) // 每30秒检查一次
 		defer ticker.Stop()
 
-		for {
-			select {
-			case <-ticker.C:
-				// 尝试设置读取截止时间来检测连接状态
-				if err := conn.SetReadDeadline(time.Now().Add(1 * time.Microsecond)); err != nil {
-					zap.S().Debugf("连接 %s 已断开: %v", deviceAddr, err)
-					return
-				}
-
-				// 立即重置截止时间
-				conn.SetReadDeadline(time.Time{})
+		for range ticker.C {
+			// 尝试设置读取截止时间来检测连接状态
+			if err := conn.SetReadDeadline(time.Now().Add(1 * time.Microsecond)); err != nil {
+				zap.S().Debugf("连接 %s 已断开: %v", deviceAddr, err)
+				return
 			}
+
+			// 立即重置截止时间
+			conn.SetReadDeadline(time.Time{})
 		}
 	}()
 }
@@ -1076,5 +1173,51 @@ func removeDeviceByAddrTraditional(deviceAddr string) {
 		}
 		delete(onlineDevices, deviceAddr)
 		zap.S().Infof("移除设备: %s", deviceAddr)
+	}
+}
+
+// RegisterDataCallback 注册数据回调函数
+func RegisterDataCallback(deviceAddr string, callback DataCallback) {
+	dataCallbackMutex.Lock()
+	defer dataCallbackMutex.Unlock()
+
+	dataCallbacks[deviceAddr] = callback
+	// zap.S().Debugf("注册数据回调函数: %s", deviceAddr)
+}
+
+// UnregisterDataCallback 注销数据回调函数
+func UnregisterDataCallback(deviceAddr string) {
+	dataCallbackMutex.Lock()
+	defer dataCallbackMutex.Unlock()
+
+	delete(dataCallbacks, deviceAddr)
+	// zap.S().Debugf("注销数据回调函数: %s", deviceAddr)
+}
+
+// notifyDataCallbacks 通知数据回调函数
+func notifyDataCallbacks(deviceAddr string, data []byte) {
+	dataCallbackMutex.RLock()
+	defer dataCallbackMutex.RUnlock()
+
+	// zap.S().Infof("尝试通知数据回调函数: %s, 数据长度: %d, 已注册回调数量: %d", deviceAddr, len(data), len(dataCallbacks))
+
+	// 打印所有已注册的设备地址
+	// for addr := range dataCallbacks {
+	// 	zap.S().Debugf("已注册回调的设备: %s", addr)
+	// }
+
+	if callback, exists := dataCallbacks[deviceAddr]; exists {
+		// 在goroutine中异步调用回调函数，避免阻塞
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					zap.S().Errorf("数据回调函数执行异常: %v", r)
+				}
+			}()
+			callback(deviceAddr, data)
+		}()
+		// zap.S().Infof("成功通知数据回调函数: %s, 数据长度: %d", deviceAddr, len(data))
+	} else {
+		// zap.S().Warnf("设备 %s 没有注册数据回调函数", deviceAddr)
 	}
 }

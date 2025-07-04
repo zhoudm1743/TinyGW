@@ -14,7 +14,7 @@ logger:
     maxbackups: 10
     maxsize: 10
 serial:
-    openeverytime: false
+    openeverytime: true
 server:
     host: 0.0.0.0
     module: debug

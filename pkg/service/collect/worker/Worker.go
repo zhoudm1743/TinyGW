@@ -3,7 +3,6 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"strings"
 	"time"
 	"tinyGW/app/api/repository"
@@ -13,6 +12,8 @@ import (
 	"tinyGW/pkg/service/conf"
 	"tinyGW/pkg/service/event"
 	"tinyGW/pkg/service/script"
+
+	"go.uber.org/zap"
 )
 
 type Worker interface {
@@ -433,7 +434,17 @@ func (w *worker) CommandExecutor(task any) {
 	// 如果每次都打开，那么在这里打开
 	if w.config.Serial.OpenEveryTime {
 		w.Collector.Open(&device)
-		defer w.Collector.Close()
+		// 对于4G直连采集器，不要关闭连接，因为连接由zdm.go管理
+		if _, ok := w.Collector.(*collector.FourGDirectCollector); ok {
+			// 不调用Close，保持连接
+		} else {
+			defer w.Collector.Close()
+		}
+	} else {
+		// 对于4G直连采集器，即使不是每次都打开，也需要初始化以注册数据回调
+		if _, ok := w.Collector.(*collector.FourGDirectCollector); ok {
+			w.Collector.Open(&device)
+		}
 	}
 	// 串口命令
 	// 只有最后一条有返回结果

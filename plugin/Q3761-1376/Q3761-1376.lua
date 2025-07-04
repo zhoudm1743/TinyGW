@@ -174,8 +174,8 @@ function buildFrame(address, afn, fn, pn, data, isUplink)
         -- 上行帧：FIR=1, FIN=1, CON=1, PSEQ=7 (需要确认)
         frame[14] = 0x77  -- 01110111B
     else
-        -- 下行帧：FIR=0, FIN=1, CON=1, PSEQ=3 (按照正确报文)
-        frame[14] = 0x73  -- 01110011B
+        -- 下行帧：FIR=0, FIN=1, CON=1, PSEQ=0 (按照正确报文)
+        frame[14] = 0x70  -- 01110000B
     end
     
     -- 数据单元标识 DA (2字节)
@@ -224,36 +224,34 @@ function generateLogoutCommand(address)
 end
 
 -- 生成透明转发命令 (AFN=10H, F1, p0)
-function generateTransparentForward(address, port, timeout, data)
+function generateTransparentForward(address, port, timeout, data, cmdName)
     local forwardData = {}
-    
-    -- 终端通信端口号
-    table.insert(forwardData, port or 1)
-    
-    -- 透明转发通信控制字 (按照正确报文格式)
-    table.insert(forwardData, 0x6B)  -- 控制字
-    table.insert(forwardData, 0x7F)  -- 超时时间1
-    table.insert(forwardData, 0xC8)  -- 超时时间2 
-    
-    -- 超时时间 (按照正确报文: 0x20)
-    table.insert(forwardData, 0x20)
-    
-    -- 按照正确报文格式，只需要一个 0x00 字节
-    table.insert(forwardData, 0x00)
-    
-    -- 数据内容
+    -- 针对 dev_consumption 指令特殊处理参数
+    if cmdName == "dev_consumption" then
+        table.insert(forwardData, port or 1)
+        table.insert(forwardData, 0x6B)  -- 控制字
+        table.insert(forwardData, 0x7F)  -- 超时时间1
+        table.insert(forwardData, 0xC8)  -- 超时时间2
+        table.insert(forwardData, 0x14)  -- 正确报文为 0x14
+        table.insert(forwardData, 0x00)
+    else
+        -- 原有逻辑
+        table.insert(forwardData, port or 1)
+        table.insert(forwardData, 0x6B)
+        table.insert(forwardData, 0x7F)
+        table.insert(forwardData, 0xC8)
+        table.insert(forwardData, 0x20)
+        table.insert(forwardData, 0x00)
+    end
     if data then
         for i = 1, #data do
             table.insert(forwardData, data[i])
         end
     end
-    
-    -- 填充16字节的 0x00 数据
     for i = 1, 16 do
         table.insert(forwardData, 0x00)
     end
-    
-    return buildFrame(address, AFN.DATA_FORWARD, 1, 0, forwardData, false)  -- 下行帧
+    return buildFrame(address, AFN.DATA_FORWARD, 1, 0, forwardData, false)
 end
 
 -- 生成读取终端版本信息命令 (AFN=09H, F1, p0)
@@ -368,54 +366,54 @@ end
 
 -- 设备自定义命令
 function DeviceCustomCmd(sAddr, cmdName, cmdParam, step)
-    print("Q3761-1376 DeviceCustomCmd: sAddr=" .. tostring(sAddr) .. ", cmdName=" .. tostring(cmdName) .. ", cmdParam=" .. tostring(cmdParam))
+    -- print("Q3761-1376 DeviceCustomCmd: sAddr=" .. tostring(sAddr) .. ", cmdName=" .. tostring(cmdName) .. ", cmdParam=" .. tostring(cmdParam))
     
     local params = {}
     if cmdParam and cmdParam ~= "" then
         local success, result = pcall(json.jsondecode, cmdParam)
         if success and result and type(result) == "table" then
             params = result
-            print("Q3761-1376: 成功解析commandParam")
+            -- print("Q3761-1376: 成功解析commandParam")
         else
-            print("Q3761-1376: commandParam解析失败或不是表格类型")
+            -- print("Q3761-1376: commandParam解析失败或不是表格类型")
         end
     else
-        print("Q3761-1376: commandParam为空，使用默认参数")
+        -- print("Q3761-1376: commandParam为空，使用默认参数")
     end
     
     -- 解析设备地址，支持多种格式
     local commAddr, meterAddr = parseDeviceAddress(sAddr)
-    print("Q3761-1376: 解析地址结果 - 通讯地址=" .. tostring(commAddr) .. ", 电表地址=" .. tostring(meterAddr))
+    --  print("Q3761-1376: 解析地址结果 - 通讯地址=" .. tostring(commAddr) .. ", 电表地址=" .. tostring(meterAddr))
     
     -- 如果commandParam中提供了地址，优先使用commandParam中的地址
     if params and params.commAddr then
         commAddr = params.commAddr
-        print("Q3761-1376: 使用commandParam覆盖通讯地址=" .. tostring(commAddr))
+        -- print("Q3761-1376: 使用commandParam覆盖通讯地址=" .. tostring(commAddr))
     end
     if params and params.meterAddr then
         meterAddr = params.meterAddr
-        print("Q3761-1376: 使用commandParam覆盖电表地址=" .. tostring(meterAddr))
+        -- print("Q3761-1376: 使用commandParam覆盖电表地址=" .. tostring(meterAddr))
     end
     
     local password = (params and params.password) or "000000"  -- 操作密码
-    print("Q3761-1376: 最终参数 - 通讯地址=" .. tostring(commAddr) .. ", 电表地址=" .. tostring(meterAddr) .. ", 密码=" .. tostring(password))
+    -- print("Q3761-1376: 最终参数 - 通讯地址=" .. tostring(commAddr) .. ", 电表地址=" .. tostring(meterAddr) .. ", 密码=" .. tostring(password))
     
     if cmdName == "dev_consumption" then
         -- 正向总有功电能 DI = 00 00 01 00
         local dltCmd = generateDLT645ReadCommand(meterAddr, {0x00, 0x00, 0x01, 0x00})
-        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd)
+        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd, "dev_consumption")
         return {Status = "0", Variable = cmd}
         
     elseif cmdName == "OpenValve" then
         -- 跳闸命令 controlType = 0x1A
         local dltCmd = generateDLT645ControlCommand(meterAddr, 0x1A, password)
-        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd)
+        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd, cmdName)
         return {Status = "0", Variable = cmd}
         
     elseif cmdName == "CloseValve" then
         -- 合闸命令 controlType = 0x1B  
         local dltCmd = generateDLT645ControlCommand(meterAddr, 0x1B, password)
-        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd)
+        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd, cmdName)
         return {Status = "0", Variable = cmd}
         
     elseif cmdName == "login" then
@@ -434,7 +432,7 @@ function DeviceCustomCmd(sAddr, cmdName, cmdParam, step)
         local port = (params and params.port) or 1
         local timeout = (params and params.timeout) or 30
         local data = (params and params.data) or {}
-        local cmd = generateTransparentForward(commAddr, port, timeout, data)
+        local cmd = generateTransparentForward(commAddr, port, timeout, data, cmdName)
         return {Status = "0", Variable = cmd}
         
     elseif cmdName == "version" then
@@ -453,11 +451,20 @@ end
 
 -- 数据接收分析
 function AnalysisRx(sAddr, rxBufCnt)
+    -- print("Q3761-1376 AnalysisRx: 开始解析数据，长度=" .. rxBufCnt)
+    
     if rxBufCnt < 16 then
         rxBuf = {}
         print("错误: 接收数据长度不足，长度: " .. rxBufCnt)
         return {Status = "1", Variable = {}}
     end
+    
+    -- 打印接收到的原始数据
+    local hexData = ""
+    for i = 1, math.min(rxBufCnt, 50) do
+        hexData = hexData .. string.format("%02X ", rxBuf[i] or 0)
+    end
+    -- print("Q3761-1376: 接收数据: " .. hexData)
     
     local frame, err = parseFrame(rxBuf, rxBufCnt)
     if not frame then
@@ -465,6 +472,8 @@ function AnalysisRx(sAddr, rxBufCnt)
         print("帧解析错误: " .. err)
         return {Status = "1", Variable = {}}
     end
+    
+    -- print("Q3761-1376: 帧解析成功，AFN=0x" .. string.format("%02X", frame.afn) .. ", 数据长度=" .. frame.dataLen)
     
     local variables = {}
     
@@ -476,77 +485,159 @@ function AnalysisRx(sAddr, rxBufCnt)
         return {Status = "1", Variable = {}}
     end
     
+    -- print("Q3761-1376: 数据单元解析成功，Pn=" .. dataUnit.pn .. ", Fn=0x" .. string.format("%04X", dataUnit.fn))
+    
     -- 将DT转换为Fn值进行判断
     local realFn = convertDTToFn(dataUnit.fn)
+    -- print("Q3761-1376: 实际Fn=" .. realFn)
     
     -- 根据AFN类型解析数据
     if frame.afn == AFN.DATA_FORWARD then
+        -- print("Q3761-1376: 处理数据转发响应")
         -- 数据转发响应 - 重点处理DLT645透明转发数据
         if realFn == 1 then
+            -- print("Q3761-1376: 处理F1透明转发响应")
             -- F1：透明转发响应
             local dataStart = dataUnit.dataStart
             
-            -- 跳过透明转发协议头部信息
-            -- 端口号(1) + 控制字(1) + 超时(1) + 字节间超时(1) + 数据长度(2) = 6字节
-            if frame.dataLen > 10 then
-                dataStart = dataStart + 6
-                
-                -- 查找DLT645帧数据(跳过可能的FE前缀)
-                while dataStart < frame.dataStart + frame.dataLen and rxBuf[dataStart] == 0xFE do
-                    dataStart = dataStart + 1
+            -- 直接取20字节透明转发内容
+            local contentStart = dataStart
+            local contentLen = 20
+            -- print("Q3761-1376: 透明转发内容长度=" .. contentLen)
+            -- print("Q3761-1376: 透明转发内容起始位置=" .. contentStart)
+            local contentHex = ""
+            for i = contentStart, contentStart + contentLen - 1 do
+                contentHex = contentHex .. string.format("%02X ", rxBuf[i] or 0)
+            end
+            -- print("Q3761-1376: 透明转发内容: " .. contentHex)
+            
+            -- 在透明转发内容中查找DLT645帧
+            local dltStartIndex = -1
+            for i = contentStart, contentStart + contentLen - 8 do
+                if rxBuf[i] == 0x68 and rxBuf[i+7] == 0x68 then
+                    dltStartIndex = i
+                    -- print("Q3761-1376: 在透明转发内容位置" .. (i - contentStart) .. "找到DLT645帧头")
+                    break
                 end
+            end
+            
+            if dltStartIndex > 0 then
+                -- print("Q3761-1376: 找到DLT645帧，起始位置=" .. dltStartIndex)
                 
-                -- 检查是否为DLT645帧(68开头)
-                if dataStart + 15 < frame.dataStart + frame.dataLen and rxBuf[dataStart] == 0x68 then
-                    local dltStartIndex = dataStart
-                    
-                    -- DLT645地址域检查(第二个68的位置)
-                    if rxBuf[dltStartIndex + 7] == 0x68 then
-                        local ctrlCode = rxBuf[dltStartIndex + 8] or 0
-                        local dataLen = rxBuf[dltStartIndex + 9] or 0
-                        
-                        -- 解析DLT645响应
-                        if ctrlCode == 0x91 then
-                            -- 读数据响应
-                            local dataIdStart = dltStartIndex + 10
-                            local dataIdStr = string.format("%02X%02X%02X%02X",
-                                    (rxBuf[dataIdStart] or 0) - 0x33, 
-                                    (rxBuf[dataIdStart + 1] or 0) - 0x33,
-                                    (rxBuf[dataIdStart + 2] or 0) - 0x33, 
-                                    (rxBuf[dataIdStart + 3] or 0) - 0x33)
-                            
-                            local valueStart = dataIdStart + 4
-                            local valueData = {}
-                            for i = valueStart, valueStart + dataLen - 5 do
-                                table.insert(valueData, (rxBuf[i] or 0) - 0x33)
-                            end
-                            
-                            if dataIdStr == "00000100" then
-                                -- 正向总有功电能
-                                local valueStr = ""
-                                for i = #valueData, 1, -1 do
-                                    valueStr = valueStr .. string.format("%02X", valueData[i])
-                                end
-                                local consumption = tonumber(valueStr, 16) or 0
-                                table.insert(variables, utils.AppendVariable(0, "dev_consumption", "正向总有功电能", "double", consumption, string.format("%.2f kWh", consumption / 100.0)))
-                            end
-                            
-                        elseif ctrlCode == 0x9C then
-                            -- 写数据成功响应
-                            table.insert(variables, utils.AppendVariable(99, "command_status", "操作状态", "string", "success", "拉合闸操作成功"))
-                            
-                        elseif ctrlCode == 0xD1 then
-                            -- 读数据异常响应
-                            local errCode = rxBuf[dltStartIndex + 10] or 0
-                            table.insert(variables, utils.AppendVariable(99, "error_status", "错误状态", "string", string.format("error_%02X", errCode), "读数据异常"))
-                            
-                        elseif ctrlCode == 0xDC then
-                            -- 写数据异常响应
-                            local errCode = rxBuf[dltStartIndex + 10] or 0
-                            table.insert(variables, utils.AppendVariable(99, "error_status", "错误状态", "string", string.format("error_%02X", errCode), "写数据异常"))
+                -- 打印完整的DLT645帧用于调试
+                local frameHex = ""
+                for i = dltStartIndex, dltStartIndex + 20 do
+                    frameHex = frameHex .. string.format("%02X ", rxBuf[i] or 0)
+                end
+                -- print("Q3761-1376: DLT645完整帧: " .. frameHex)
+                
+                -- 控制码
+                local ctrlCode = rxBuf[dltStartIndex + 8] or 0
+                -- print("Q3761-1376: DLT645控制码=0x" .. string.format("%02X", ctrlCode))
+                
+                -- 数据长度
+                local dltDataLen = rxBuf[dltStartIndex + 9] or 0
+                -- print("Q3761-1376: DLT645数据长度=" .. dltDataLen)
+                
+                -- 验证控制码是否为读数据响应 (0x91)
+                if ctrlCode ~= 0x91 then
+                    print("Q3761-1376: 警告：控制码不是读数据响应，实际=" .. string.format("0x%02X", ctrlCode))
+                end
+                -- 数据标识
+                local dataIdStart = dltStartIndex + 10
+                local dataId = {}
+                for j = 0, 3 do
+                    dataId[4-j] = (rxBuf[dataIdStart + j] or 0) - 0x33
+                end
+                -- print("Q3761-1376: 数据标识: " .. string.format("%02X%02X%02X%02X", dataId[1], dataId[2], dataId[3], dataId[4]))
+                
+                -- 检查数据标识是否为正向总有功电能 (00000000)
+                if dataId[1] == 0x00 and dataId[2] == 0x01 and dataId[3] == 0x00 and dataId[4] == 0x00 then
+                    -- print("Q3761-1376: 检测到正向总有功电能数据标识")
+                    -- 数据
+                    local valueStart = dataIdStart + 4
+                    local value = {}
+                    for j = 0, 3 do
+                        local rawByte = rxBuf[valueStart + j] or 0
+                        -- DLT645协议：数据需要减33处理，但要注意溢出处理
+                        if rawByte >= 0x33 then
+                            value[j+1] = rawByte - 0x33
+                        else
+                            value[j+1] = rawByte + 256 - 0x33
                         end
                     end
+                    local n = ""
+                    for i = #value, 1, -1 do
+                        n = n.. string.format("%02X", value[i])
+                    end
+                    -- print("Q3761-1376: 原始数据字节: " .. n)
+                    
+                    -- 根据645-07协议，正向总有功电能格式为 XXXXXX.XX，4字节
+                    local consumption = tonumber(n, 10)  -- 使用16进制解析
+                    local actualConsumption = consumption 
+                    print("Q3761-1376: 正向总有功电能: " .. actualConsumption/100.0 .. " kW/h")
+                    table.insert(variables, utils.AppendVariable(0, "dev_consumption", "正向总有功电能", "double", actualConsumption, "kwh"))
+                else
+                    -- print("Q3761-1376: 数据标识不匹配，期望00000000，实际" .. string.format("%02X%02X%02X%02X", dataId[1], dataId[2], dataId[3], dataId[4]))
+                    
+                    -- 尝试解析其他数据标识，支持多种电能数据标识
+                    local valueStart = dataIdStart + 4
+                    local value = {}
+                    for j = 0, 3 do
+                        local rawByte = rxBuf[valueStart + j] or 0
+                        -- DLT645协议：数据需要减33处理，但要注意溢出处理
+                        if rawByte >= 0x33 then
+                            value[j+1] = rawByte - 0x33
+                        else
+                            value[j+1] = rawByte + 256 - 0x33
+                        end
+                    end
+                    
+                    local n = ""
+                    for i = #value, 1, -1 do
+                        n = n.. string.format("%02X", value[i])
+                    end
+                    -- print("Q3761-1376: 其他数据原始字节: " .. n)
+                    
+                    -- 检查是否为其他电能数据标识
+                    local isEnergyData = false
+                    local energyType = ""
+                    
+                    -- 检查正向有功总电量 (00000000)
+                    if dataId[1] == 0x00 and dataId[2] == 0x01 and dataId[3] == 0x00 and dataId[4] == 0x00 then
+                        isEnergyData = true
+                        energyType = "正向有功总电量"
+                    -- 检查组合有功总电量 (04000000)
+                    elseif dataId[1] == 0x04 and dataId[2] == 0x00 and dataId[3] == 0x00 and dataId[4] == 0x00 then
+                        isEnergyData = true
+                        energyType = "组合有功总电量"
+                    -- 检查当前剩余电量 (00900100)
+                    elseif dataId[1] == 0x00 and dataId[2] == 0x90 and dataId[3] == 0x01 and dataId[4] == 0x00 then
+                        isEnergyData = true
+                        energyType = "当前剩余电量"
+                    end
+                    
+                    if isEnergyData then
+                        local consumption = value[1] + value[2]*256 + value[3]*65536 + value[4]*16777216
+                        local actualConsumption = consumption / 100.0
+                        -- print("Q3761-1376: " .. energyType .. ": " .. actualConsumption .. " kWh")
+                        table.insert(variables, utils.AppendVariable(0, "dev_consumption", energyType, "double", actualConsumption, string.format("%.4f kWh", actualConsumption)))
+                    else
+                        -- 未知数据标识，仍然尝试解析
+                        local consumption = value[1] + value[2]*256 + value[3]*65536 + value[4]*16777216
+                        local actualConsumption = consumption / 100.0
+                        -- print("Q3761-1376: 未知数据标识值: " .. actualConsumption)
+                        table.insert(variables, utils.AppendVariable(0, "dev_consumption", "正向总有功电能", "double", actualConsumption, string.format("%.4f kWh", actualConsumption)))
+                    end
                 end
+            else
+                -- print("Q3761-1376: 未找到有效的DLT645帧")
+                -- 打印当前位置附近的数据
+                local debugHex = ""
+                for i = contentStart, math.min(contentStart + 10, frame.dataStart + frame.dataLen - 1) do
+                    debugHex = debugHex .. string.format("%02X ", rxBuf[i] or 0)
+                end
+                -- print("Q3761-1376: 透明转发内容附近数据: " .. debugHex)
             end
             
         elseif realFn == 254 then
@@ -716,6 +807,7 @@ function AnalysisRx(sAddr, rxBufCnt)
         table.insert(variables, utils.AppendVariable(105, "RealFn", "实际Fn", "Number", realFn, string.format("F%d", realFn)))
     end
     
+    -- print("Q3761-1376: 解析完成，返回" .. #variables .. "个变量")
     rxBuf = {}
     return {Status = "0", Variable = variables}
 end
@@ -726,14 +818,14 @@ end
 -- 格式1: "通讯地址|电表地址" 如 "053040961|202505300001" 
 -- 格式2: 单一地址，通讯地址和电表地址相同
 function parseDeviceAddress(sAddr)
-    print("Q3761-1376 parseDeviceAddress: 输入地址=" .. tostring(sAddr))
+    -- print("Q3761-1376 parseDeviceAddress: 输入地址=" .. tostring(sAddr))
     
     if string.find(sAddr, "|") then
         -- 格式1: 通讯地址|电表地址
         local pos = string.find(sAddr, "|")
         local commAddr = string.sub(sAddr, 1, pos - 1)
         local meterAddr = string.sub(sAddr, pos + 1)
-        print("Q3761-1376: 使用分隔符格式 - 通讯地址=" .. tostring(commAddr) .. ", 电表地址=" .. tostring(meterAddr))
+        -- print("Q3761-1376: 使用分隔符格式 - 通讯地址=" .. tostring(commAddr) .. ", 电表地址=" .. tostring(meterAddr))
         return commAddr, meterAddr
     else
         -- 格式2: 单一地址，假设是电表地址，通讯地址相同
@@ -744,15 +836,15 @@ end
 
 -- 生成普通采集任务的命令
 function GenerateGetRealVariables(sAddr, step)
-    print("Q3761-1376 GenerateGetRealVariables", sAddr, step)
+    -- print("Q3761-1376 GenerateGetRealVariables", sAddr, step)   
     
     local commAddr, meterAddr = parseDeviceAddress(sAddr)
-    print("解析地址: 通讯地址=" .. commAddr .. ", 电表地址=" .. meterAddr)
+    -- print("解析地址: 通讯地址=" .. commAddr .. ", 电表地址=" .. meterAddr)
     
     if step == 0 then
         -- 第一步：读取正向总有功电能
         local dltCmd = generateDLT645ReadCommand(meterAddr, {0x00, 0x00, 0x01, 0x00})
-        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd)
+        local cmd = generateTransparentForward(commAddr, 1, 30, dltCmd, "dev_consumption")
         return {Status = "1", Variable = cmd}  -- Status="1" 表示需要发送命令并等待响应
     end
     
