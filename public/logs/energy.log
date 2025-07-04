@@ -9022,3 +9022,16 @@
 2025-07-04T16:10:40.657+0800	DEBUG	listener/zdm.go:681	发送响应成功: 长度=20, 内容=[68 32 00 32 00 68 00 30 05 01 a0 01 00 c0 00 00 01 00 98 16]
 2025-07-04T16:10:48.117+0800	INFO	listener/zdm.go:977	设备统计 - 在线:1, 登录:1, 心跳:17, 响应:18, 错误:0, 断开:0, 运行时间:1680s
 2025-07-04T16:11:18.117+0800	INFO	listener/zdm.go:977	设备统计 - 在线:1, 登录:1, 心跳:17, 响应:18, 错误:0, 断开:0, 运行时间:1710s
+2025-07-04T16:11:43.390+0800	INFO	fxevent/zap.go:51	received signal	{"signal": "INTERRUPT"}
+2025-07-04T16:11:43.390+0800	INFO	fxevent/zap.go:51	OnStop hook executing	{"callee": "tinyGW/boot.setup.func4()", "caller": "tinyGW/boot.setup"}
+2025-07-04T16:11:43.390+0800	INFO	boot/boot.go:93	停止监听线程
+2025-07-04T16:11:43.391+0800	INFO	cloud/MqttClient.go:150	MClient.Disconnect 关闭服务器连接！
+2025-07-04T16:11:43.392+0800	ERROR	listener/zdm.go:150	Accept error: accept tcp [::]:51483: use of closed network connection
+2025-07-04T16:11:43.392+0800	ERROR	listener/zdm.go:150	Accept error: accept tcp [::]:51484: use of closed network connection
+2025-07-04T16:11:43.392+0800	ERROR	listener/zdm.go:150	Accept error: accept tcp [::]:51485: use of closed network connection
+2025-07-04T16:11:43.392+0800	ERROR	subscription/MqttServer.go:71	MServer.Disconnect 关闭服务器连接！
+2025-07-04T16:11:43.392+0800	INFO	fxevent/zap.go:51	OnStop hook executed	{"callee": "tinyGW/boot.setup.func4()", "caller": "tinyGW/boot.setup", "runtime": "2.1878ms"}
+2025-07-04T16:11:43.393+0800	INFO	fxevent/zap.go:51	OnStop hook executing	{"callee": "tinyGW/boot.setup.func2()", "caller": "tinyGW/boot.setup"}
+2025-07-04T16:11:43.393+0800	ERROR	boot/boot.go:78	停止Web服务器
+2025-07-04T16:11:43.470+0800	INFO	event/service.go:180	Shutting down event service
+2025-07-04T16:11:43.470+0800	INFO	fxevent/zap.go:51	OnStop hook executed	{"callee": "tinyGW/boot.setup.func2()", "caller": "tinyGW/boot.setup", "runtime": "77.6221ms"}
