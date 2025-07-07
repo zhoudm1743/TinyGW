@@ -50,4 +50,5 @@ type Collector struct {
 	FourGPRS  FourGPRS  `json:"fouGPRS" gorm:"type:json;serializer:json"`                        // 4G模块
 	Timeout   int       `json:"timeout"`                                                         // 超时
 	Interval  int       `json:"interval"`                                                        // 间隔
+	Enable    bool      `json:"enable" gorm:"default:true"`                                      // 是否启用
 }

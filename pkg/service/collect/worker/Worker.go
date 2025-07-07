@@ -99,18 +99,51 @@ func (w *worker) Stop() {
 
 // BlockRead 阻塞读取数据
 func (w *worker) BlockRead() {
+	// 预分配单个缓冲区并重用，避免频繁内存分配
+	buf := make([]byte, 1024)
+
+	// 自适应休眠时间
+	sleepTime := 50 * time.Millisecond
+	emptyReadCount := 0
+
 	for {
 		select {
 		case <-w.stopChan:
 			zap.S().Info("串口数据读取线程正确退出！")
 			return
 		default:
-			buf := make([]byte, 1024)
 			count := w.Collector.Read(buf)
+
 			if count > 0 {
-				w.dataChan <- append([]byte(nil), buf[:count]...) // 复制数据
+				// 有数据读取时，重置空读计数和休眠时间
+				dataCopy := make([]byte, count)
+				copy(dataCopy, buf[:count])
+
+				// 避免阻塞，使用非阻塞发送，如果通道满则记录日志
+				select {
+				case w.dataChan <- dataCopy:
+					// 发送成功
+					emptyReadCount = 0
+					sleepTime = 50 * time.Millisecond
+				default:
+					// 通道已满，记录警告但不阻塞
+					zap.S().Warnf("数据通道已满，丢弃读取的%d字节数据", count)
+				}
+			} else {
+				// 无数据读取时，增加空读计数
+				emptyReadCount++
+
+				// 动态调整休眠时间，减少CPU使用
+				if emptyReadCount > 20 {
+					sleepTime = 200 * time.Millisecond
+				}
+				if emptyReadCount > 50 {
+					sleepTime = 500 * time.Millisecond
+				}
 			}
-			time.Sleep(100 * time.Millisecond)
+
+			// 使用动态休眠时间
+			time.Sleep(sleepTime)
 		}
 	}
 }

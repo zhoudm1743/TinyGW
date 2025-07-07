@@ -1,6 +1,17 @@
 package collector
 
-import "tinyGW/app/models"
+import (
+	"net"
+	"sync"
+	"tinyGW/app/models"
+)
+
+var (
+	// CollectorInstancesMutex 采集器实例互斥锁
+	CollectorInstancesMutex sync.RWMutex
+	// CollectorInstances 采集器实例映射
+	CollectorInstances = make(map[string]Collector)
+)
 
 // Collector 【采集器接口】
 type Collector interface {
@@ -15,28 +26,54 @@ type Collector interface {
 
 // ConnectorFactory 【采集器接口】工厂，根据【采集接口】创建不同的【采集器】
 func ConnectorFactory(collector models.Collector) Collector {
+	// 检查是否已经存在该采集器的实例
+	CollectorInstancesMutex.RLock()
+	if instance, exists := CollectorInstances[collector.Name]; exists {
+		CollectorInstancesMutex.RUnlock()
+		return instance
+	}
+	CollectorInstancesMutex.RUnlock()
+
+	// 创建新的采集器实例
+	var instance Collector
+
 	switch collector.Type {
 	case "Serial":
-		return &SerialCollector{
+		instance = &SerialCollector{
 			Collector: collector,
 		}
 	case "TcpClient":
-		return &TcpClientCollector{
+		instance = &TcpClientCollector{
 			Collector: collector,
 		}
 	case "TcpServer":
-		return &TcpServerCollector{
-			Collector: collector,
+		// 使用增强版的TcpServerCollector，支持4G水表等协议
+		tcpServer := &TcpServerCollector{
+			Collector:         collector,
+			deviceConnections: make(map[string]net.Conn),
+			commandResponses:  make(map[string]*CommandResponse),
 		}
+		// 初始化条件变量
+		tcpServer.responseCond = sync.NewCond(&tcpServer.responseMutex)
+		// 启动定期清理任务
+		go tcpServer.startPeriodicCleanup()
+		instance = tcpServer
 	case "Mqtt":
-		return &MqttCollector{
+		instance = &MqttCollector{
 			Collector: collector,
 		}
 	case "fouGPRS", "FourGPRS":
-		return &FourGDirectCollector{
+		instance = &FourGDirectCollector{
 			Collector: collector,
 		}
 	}
 
-	return nil
+	if instance != nil {
+		// 存储实例
+		CollectorInstancesMutex.Lock()
+		CollectorInstances[collector.Name] = instance
+		CollectorInstancesMutex.Unlock()
+	}
+
+	return instance
 }

@@ -27,10 +27,11 @@ type Serial struct {
 }
 
 type Server struct {
-	Port     int    `yaml:"port" json:"port"`
-	Host     string `yaml:"host" json:"host"`
-	Mode     string `yaml:"module" json:"module"`
-	TcpPorts string `yaml:"tcpPorts" json:"tcpPorts"` // TCP服务器端口列表，以逗号分隔
+	Port       int    `yaml:"port" json:"port"`
+	Host       string `yaml:"host" json:"host"`
+	Mode       string `yaml:"module" json:"module"`
+	TcpPorts   string `yaml:"tcpPorts" json:"tcpPorts"`     // TCP服务器端口列表，以逗号分隔
+	MaxWorkers int    `yaml:"maxWorkers" json:"maxWorkers"` // 最大工作线程数量
 }
 
 type Cloud struct {

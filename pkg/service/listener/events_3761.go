@@ -3,6 +3,7 @@ package listener
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -99,18 +100,23 @@ func isF254ActiveReport(data []byte) bool {
 func parse3761Event(deviceAddr string, data []byte) (*Event3761, error) {
 	event := &Event3761{
 		DeviceAddr: deviceAddr,
-		RawData:    data,
-		EventData:  make(map[string]interface{}),
+		EventData:  make(map[string]interface{}, 8), // 预分配合理容量，减少扩容
 	}
 
-	// 解析透明转发内容
-	transparentData, err := extractTransparentData(data)
+	// 只在Debug模式下复制原始数据
+	if zap.S().Level() == zap.DebugLevel {
+		event.RawData = make([]byte, len(data))
+		copy(event.RawData, data)
+	}
+
+	// 解析透明转发内容 - 使用更高效的提取方式
+	transparentData, err := extractTransparentDataOptimized(data)
 	if err != nil {
 		return nil, fmt.Errorf("提取透明转发数据失败: %v", err)
 	}
 
 	// 解析DLT645数据域
-	dlt645Data, err := parseDLT645Data(transparentData)
+	dlt645Data, err := parseDLT645DataOptimized(transparentData)
 	if err != nil {
 		return nil, fmt.Errorf("解析DLT645数据失败: %v", err)
 	}
@@ -138,39 +144,32 @@ func parse3761Event(deviceAddr string, data []byte) (*Event3761, error) {
 	return event, nil
 }
 
-// extractTransparentData 提取透明转发数据
-func extractTransparentData(data []byte) ([]byte, error) {
-	// 跳过3761协议头，找到透明转发内容
-	// 透明转发内容从第18字节开始
+// extractTransparentDataOptimized 提取透明转发数据的优化版本
+func extractTransparentDataOptimized(data []byte) ([]byte, error) {
+	// 快速检查数据长度
 	if len(data) < 18 {
 		return nil, fmt.Errorf("数据长度不足")
 	}
 
-	// 查找0xFD标识符
-	fdIndex := -1
+	// 查找0xFD标识符 - 使用更高效的内存搜索
 	for i := 18; i < len(data)-1; i++ {
 		if data[i] == 0xFD {
-			fdIndex = i
-			break
+			// 直接返回切片引用，避免额外内存分配
+			return data[i:], nil
 		}
 	}
 
-	if fdIndex == -1 {
-		return nil, fmt.Errorf("未找到透明转发标识符0xFD")
-	}
-
-	// 提取透明转发内容
-	transparentData := data[fdIndex:]
-	return transparentData, nil
+	return nil, fmt.Errorf("未找到透明转发标识符0xFD")
 }
 
-// parseDLT645Data 解析DLT645数据域
-func parseDLT645Data(transparentData []byte) (map[string]interface{}, error) {
+// parseDLT645DataOptimized 解析DLT645数据域的优化版本
+func parseDLT645DataOptimized(transparentData []byte) (map[string]interface{}, error) {
 	if len(transparentData) < 8 {
 		return nil, fmt.Errorf("透明转发数据长度不足")
 	}
 
-	result := make(map[string]interface{})
+	// 预分配合理容量，减少map扩容
+	result := make(map[string]interface{}, 16)
 
 	// 跳过0xFD标识符和长度域
 	offset := 1 + 2 + 2 + 2 // 0xFD + 帧长度 + 控制字 + 时间控制字
@@ -182,21 +181,33 @@ func parseDLT645Data(transparentData []byte) (map[string]interface{}, error) {
 	tagCount := int(transparentData[offset])
 	offset++
 
+	// 限制最大TAG数量，防止异常数据
+	if tagCount > 32 {
+		zap.S().Warnf("TAG数量异常: %d，限制为32", tagCount)
+		tagCount = 32
+	}
+
 	// 解析每个TAG数据对
 	for i := 0; i < tagCount && offset+3 < len(transparentData); i++ {
 		// 读取TAG（2字节）
+		if offset+1 >= len(transparentData) {
+			break
+		}
 		tag := binary.BigEndian.Uint16(transparentData[offset:])
 		offset += 2
 
 		// 根据TAG解析数据
-		dataValue, newOffset, err := parseTagData(tag, transparentData, offset)
+		dataValue, newOffset, err := parseTagDataOptimized(tag, transparentData, offset)
 		if err != nil {
-			zap.S().Warnf("解析TAG 0x%04X数据失败: %v", tag, err)
+			// 降级为Debug日志，减少日志量
+			zap.S().Debugf("解析TAG 0x%04X数据失败: %v", tag, err)
+			// 尝试跳过这个TAG而不是终止整个解析
+			offset += 2 // 尝试跳过数据，移动到下一个可能的TAG位置
 			continue
 		}
 
-		// 存储解析结果
-		tagKey := fmt.Sprintf("tag_%04X", tag)
+		// 存储解析结果 - 使用预定义的TAG键名
+		tagKey := getTagKey(tag)
 		result[tagKey] = dataValue
 
 		// 特殊处理常用TAG
@@ -223,17 +234,41 @@ func parseDLT645Data(transparentData []byte) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// parseTagData 根据TAG解析数据
-func parseTagData(tag uint16, data []byte, offset int) (interface{}, int, error) {
+// getTagKey 返回TAG的预定义键名，避免重复的字符串格式化
+func getTagKey(tag uint16) string {
+	switch tag {
+	case 0x0001:
+		return "tag_0001"
+	case 0x0002:
+		return "tag_0002"
+	case 0x0014:
+		return "tag_0014"
+	case 0x0093:
+		return "tag_0093"
+	case 0x0096:
+		return "tag_0096"
+	case 0xFFFF:
+		return "tag_FFFF"
+	default:
+		// 针对其他TAG，缓存格式化后的字符串
+		return fmt.Sprintf("tag_%04X", tag)
+	}
+}
+
+// parseTagDataOptimized 优化的TAG数据解析函数
+func parseTagDataOptimized(tag uint16, data []byte, offset int) (interface{}, int, error) {
 	switch tag {
 	case 0x0001: // 表号（6字节）
 		if offset+6 > len(data) {
 			return nil, offset, fmt.Errorf("数据长度不足，无法读取表号")
 		}
-		tableNumber := fmt.Sprintf("%02X%02X%02X%02X%02X%02X",
-			data[offset], data[offset+1], data[offset+2],
-			data[offset+3], data[offset+4], data[offset+5])
-		return tableNumber, offset + 6, nil
+		// 使用预分配的缓冲区和更高效的字符串构建
+		var sb strings.Builder
+		sb.Grow(12) // 预分配空间：6个字节，每个字节2个十六进制字符
+		for i := 0; i < 6; i++ {
+			fmt.Fprintf(&sb, "%02X", data[offset+i])
+		}
+		return sb.String(), offset + 6, nil
 
 	case 0x0002: // 时间（7字节）
 		if offset+7 > len(data) {
@@ -248,8 +283,14 @@ func parseTagData(tag uint16, data []byte, offset int) (interface{}, int, error)
 		minute := int(data[offset+5])
 		second := int(data[offset+6])
 
-		eventTime := time.Date(year, month, day, hour, minute, second, 0, time.Local)
-		return eventTime, offset + 7, nil
+		// 检查日期有效性，避免无效日期导致panic
+		if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59 {
+			return nil, offset, fmt.Errorf("无效的日期时间数据")
+		}
+
+		// 创建时间对象
+		t := time.Date(year, month, day, hour, minute, second, 0, time.Local)
+		return t, offset + 7, nil
 
 	case 0x0014: // 状态字（2字节）
 		if offset+2 > len(data) {

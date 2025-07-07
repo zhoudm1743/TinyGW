@@ -1,7 +1,6 @@
 package listener
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -53,6 +52,14 @@ var (
 	// 数据回调函数管理
 	dataCallbacks     = make(map[string]DataCallback) // 设备地址 -> 回调函数
 	dataCallbackMutex sync.RWMutex
+
+	// 错误日志限流器
+	temporaryErrorMap     = make(map[string]int64) // 地址 -> 上次记录时间
+	temporaryErrorMapLock sync.Mutex               // 错误映射锁
+
+	// 连续超时后断开连接的阈值
+	maxConsecutiveTimeouts = 100        // 连续超时次数阈值
+	temporaryErrorInterval = int64(300) // 错误日志间隔(秒)
 )
 
 func Start() {
@@ -186,45 +193,80 @@ func handleConn(conn net.Conn) {
 	defer func() {
 		cleanupDeviceByConnection(conn)
 		conn.Close()
-		zap.S().Infof("连接已关闭: %s", conn.RemoteAddr().String())
+		// zap.S().Infof("连接已关闭: %s", conn.RemoteAddr().String())
 	}()
 
 	// 设置连接超时
 	conn.SetReadDeadline(time.Now().Add(10 * time.Minute))
+
+	// 连接信息和统计
+	remoteAddr := conn.RemoteAddr().String()
+	consecutiveTimeouts := 0
 
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
 			// 检查是否是连接断开相关的错误
 			if isConnectionClosed(err) {
-				zap.S().Infof("连接断开: %s, 错误: %v", conn.RemoteAddr().String(), err)
+				// 降低日志级别，减少日志量
+				zap.S().Debugf("连接断开: %s, 错误: %v", remoteAddr, err)
 				return
 			}
 
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				// zap.S().Infoln("临时读取错误:", ne)
+				// 增加连续超时计数
+				consecutiveTimeouts++
+
+				// 如果连续超时次数超过阈值，断开连接
+				if consecutiveTimeouts > maxConsecutiveTimeouts {
+					zap.S().Warnf("连接 %s 连续超时 %d 次，断开连接", remoteAddr, consecutiveTimeouts)
+					return
+				}
+
+				// 使用限流函数决定是否记录日志
+				if shouldLogTemporaryError(remoteAddr) {
+					zap.S().Debugf("连接 %s 临时读取错误 (已发生 %d 次): %v", remoteAddr, consecutiveTimeouts, ne)
+				}
+
 				time.Sleep(time.Second)
 				continue
 			}
 
 			// 其他读取错误，视为连接断开
-			zap.S().Warnf("读取错误，断开连接: %s, 错误: %v", conn.RemoteAddr().String(), err)
+			zap.S().Warnf("读取错误，断开连接: %s, 错误: %v", remoteAddr, err)
 			return
+		}
+
+		// 重置连续超时计数
+		if consecutiveTimeouts > 0 {
+			consecutiveTimeouts = 0
 		}
 
 		// 重置读取超时
 		conn.SetReadDeadline(time.Now().Add(10 * time.Minute))
 
-		if string(buf[0:n]) == "1234567890" {
+		// 心跳包检查，快速路径，避免记录和处理心跳包数据
+		if n == 10 && string(buf[0:n]) == "1234567890" {
 			continue
 		}
-		if bytes.Equal(buf[:2], []byte{0x32, 0x30}) {
+
+		// 登录包检查，使用BytePrefix比较而不是完整字符串转换
+		if n >= 2 && buf[0] == 0x32 && buf[1] == 0x30 {
 			register(string(buf[0:n]), conn)
 			break
 		}
-		zap.S().Infoln("TcpServer接收数据: ", fmt.Sprintf("[% 2x]", buf[:n]))
 
-		go handleData(buf[:n], conn)
+		// 减少Hex日志记录，提高性能
+		if zap.S().Level() == zap.DebugLevel {
+			zap.S().Debugln("TcpServer接收数据: ", fmt.Sprintf("[% 2x]", buf[:n]))
+		} else {
+			zap.S().Infof("TcpServer接收数据: %d字节", n)
+		}
+
+		// 复制一份数据，避免在异步处理中buf被覆盖
+		dataCopy := make([]byte, n)
+		copy(dataCopy, buf[:n])
+		go handleData(dataCopy, conn)
 	}
 }
 
@@ -242,7 +284,28 @@ func handleData(b []byte, conn net.Conn) {
 		return
 	}
 
-	zap.S().Infoln("检测到协议类型:", protocol, "数据长度:", len(b))
+	// zap.S().Infoln("检测到协议类型:", protocol, "数据长度:", len(b))
+
+	// 针对2025F183-37协议的特殊处理：简单提取地址并加入echo系统
+	if protocol == "2025F183-37" {
+		// 提取设备地址
+		deviceAddr := extractDeviceAddress(b, protocol, conn)
+		// zap.S().Debugf("标准提取设备地址: %s", deviceAddr)
+
+		// 添加到在线设备
+		addOnlineDevice(deviceAddr, protocol, conn)
+
+		// 同时将设备地址和连接添加到Echo系统
+		RegisterEchoClient(deviceAddr, conn)
+		// zap.S().Infof("2025F183-37设备已注册到Echo系统, 地址: %s", deviceAddr)
+
+		// 通知数据回调函数
+		notifyDataCallbacks(deviceAddr, b)
+
+		return
+	}
+
+	// 以下是其他协议的处理流程...
 
 	// 创建 Lua 脚本运行器
 	runner := script.NewLuaRunner()
@@ -481,9 +544,9 @@ func detectProtocol(data []byte) string {
 			return "Q3761-1376"
 		}
 
-		// 619-BY 协议特征检测：起始帧 0x68 + 表类型 0x10
+		// 2025F183-37 协议特征检测：起始帧 0x68 + 表类型 0x10
 		if len(data) >= 2 && data[1] == 0x10 {
-			return "619-BY"
+			return "2025F183-37"
 		}
 	}
 
@@ -515,14 +578,16 @@ func extractDeviceAddress(data []byte, protocol string, conn net.Conn) string {
 			// 组合完整地址：行政区划码(4位) + 终端地址(5位，前面补0)
 			return fmt.Sprintf("%04d%05d", regionCode, terminalAddr)
 		}
-	case "619-BY":
-		// 619-BY 协议地址在第3-9字节（BCD码，7字节地址）
+	case "2025F183-37":
+		// 2025F183-37 协议地址在第3-9字节（BCD码，7字节地址，低字节在前）
 		if len(data) >= 9 {
-			// 简化地址提取，实际应该按照BCD码规则解析
+			// 619协议规定：BCD码，低字节在前
 			addr := ""
-			for i := 2; i < 9 && i < len(data); i++ {
+			// 从后往前读取地址（第9字节到第3字节）
+			for i := 8; i >= 2; i-- {
 				addr += fmt.Sprintf("%02X", data[i])
 			}
+			zap.S().Debugf("提取2025F183-37协议地址: %s, 原始数据: [% 2X]", addr, data[2:9])
 			return addr
 		}
 	}
@@ -817,13 +882,15 @@ func register(code string, c net.Conn) {
 
 // startDeviceHealthCheck 启动设备健康检查
 func startDeviceHealthCheck() {
-	ticker := time.NewTicker(1 * time.Minute) // 每分钟检查一次
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			checkOfflineDevices()
+			cleanupTemporaryErrorMap() // 定期清理过期的错误记录
+			checkTimeoutConnections()  // 检查长时间超时的连接
 		}
 	}
 }
@@ -1055,8 +1122,8 @@ func cleanupDeviceByConnection(conn net.Conn) {
 		return
 	}
 
-	remoteAddr := conn.RemoteAddr().String()
-	zap.S().Infof("开始清理连接相关设备: %s", remoteAddr)
+	// remoteAddr := conn.RemoteAddr().String()
+	// zap.S().Infof("开始清理连接相关设备: %s", remoteAddr)
 
 	// 更新断开连接统计
 	atomic.AddInt64(&disconnectionCount, 1)
@@ -1082,13 +1149,13 @@ func cleanupDeviceByConnectionOptimized(conn net.Conn) {
 			optimizedDevices.Delete(addr)
 			atomic.AddInt64(&stats.OnlineDevices, -1)
 			cleanupCount++
-			zap.S().Infof("清理断开连接的设备: %s (地址: %s)", addr, device.RemoteAddr)
+			// zap.S().Infof("清理断开连接的设备: %s (地址: %s)", addr, device.RemoteAddr)
 		}
 		return true
 	})
 
 	if cleanupCount > 0 {
-		zap.S().Infof("共清理 %d 个断开连接的设备", cleanupCount)
+		// zap.S().Infof("共清理 %d 个断开连接的设备", cleanupCount)
 	}
 }
 
@@ -1219,5 +1286,87 @@ func notifyDataCallbacks(deviceAddr string, data []byte) {
 		// zap.S().Infof("成功通知数据回调函数: %s, 数据长度: %d", deviceAddr, len(data))
 	} else {
 		// zap.S().Warnf("设备 %s 没有注册数据回调函数", deviceAddr)
+	}
+}
+
+// shouldLogTemporaryError 决定是否应该记录临时错误
+// 使用错误抑制算法，避免频繁记录同一地址的相同错误
+func shouldLogTemporaryError(addr string) bool {
+	temporaryErrorMapLock.Lock()
+	defer temporaryErrorMapLock.Unlock()
+
+	now := time.Now().Unix()
+	lastTime, exists := temporaryErrorMap[addr]
+
+	// 如果不存在记录或已过足够时间，允许记录
+	if !exists || now-lastTime >= temporaryErrorInterval {
+		temporaryErrorMap[addr] = now
+		return true
+	}
+
+	return false
+}
+
+// cleanupTemporaryErrorMap 清理过期的错误记录
+// 定期调用此函数以防止内存泄漏
+func cleanupTemporaryErrorMap() {
+	temporaryErrorMapLock.Lock()
+	defer temporaryErrorMapLock.Unlock()
+
+	now := time.Now().Unix()
+	expirationTime := now - temporaryErrorInterval*2
+
+	for addr, lastTime := range temporaryErrorMap {
+		if lastTime < expirationTime {
+			delete(temporaryErrorMap, addr)
+		}
+	}
+}
+
+// checkTimeoutConnections 检查并关闭长时间超时的连接
+func checkTimeoutConnections() {
+	var timeoutAddrs []string
+
+	temporaryErrorMapLock.Lock()
+	now := time.Now().Unix()
+	for addr, lastTime := range temporaryErrorMap {
+		// 如果超时超过30分钟，尝试强制关闭连接
+		if now-lastTime > 1800 {
+			timeoutAddrs = append(timeoutAddrs, addr)
+		}
+	}
+	temporaryErrorMapLock.Unlock()
+
+	// 在锁外处理连接关闭，避免长时间持有锁
+	for _, addr := range timeoutAddrs {
+		// 从设备映射中查找连接
+		if useOptimized {
+			// 查找并关闭优化版设备的连接
+			if value, ok := optimizedDevices.Load(addr); ok {
+				device, _ := value.(*OnlineDevice)
+				if device != nil && device.Conn != nil {
+					zap.S().Warnf("关闭长时间超时的连接: %s, 最后活动时间: %v", addr, time.Unix(now-1800, 0))
+					device.Conn.Close()
+				}
+			}
+		} else {
+			// 查找并关闭传统版设备的连接
+			deviceMutex.RLock()
+			if device, ok := onlineDevices[addr]; ok && device.Conn != nil {
+				zap.S().Warnf("关闭长时间超时的连接: %s, 最后活动时间: %v", addr, time.Unix(now-1800, 0))
+				device.Conn.Close()
+			}
+			deviceMutex.RUnlock()
+		}
+
+		// 从错误映射中移除
+		temporaryErrorMapLock.Lock()
+		delete(temporaryErrorMap, addr)
+		temporaryErrorMapLock.Unlock()
+	}
+
+	// 记录统计信息
+	if len(timeoutAddrs) > 0 {
+		zap.S().Infof("已关闭 %d 个长时间超时的连接", len(timeoutAddrs))
 	}
 }
