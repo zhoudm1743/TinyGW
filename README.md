@@ -200,5 +200,8 @@ systemctl start tinyGW
 [MIT License](LICENSE)
 
 ## 联系方式
-如有问题或建议，请提交 Issue 或通过邮件联系我们。
+如有问题或建议，请提交 Issue 或通过邮件(804966813@qq.com)联系我们。
+微信：
+![我的微信](public/image/20250710163746.jpg)
+请备注 TinyGW
 
