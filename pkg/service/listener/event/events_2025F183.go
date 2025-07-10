@@ -674,12 +674,28 @@ func Init2025F183EventHandlers() {
 
 func Handle2025F183Cmd(deviceAddr string, deviceRepository repository.DeviceRepository, eventBus *event.EventService, commandManager *command.Manager, conn net.Conn) {
 	zap.S().Infof("处理2025F183-37指令: %s", deviceAddr)
-	data, ok := commandManager.Get(deviceAddr)
-	if !ok {
-		return
-	}
 
-	conn.Write(data)
-	commandManager.Remove(deviceAddr)
-	zap.S().Infof("发送指令到设备[%s]成功: %s", deviceAddr, fmt.Sprintf("[% 2X]", data))
+	// 循环处理队列中的所有指令
+	for command.GetQueueLength(deviceAddr) > 0 {
+		data, ok := commandManager.Get(deviceAddr)
+		if !ok {
+			break
+		}
+
+		// 发送指令到设备
+		_, err := conn.Write(data)
+		if err != nil {
+			zap.S().Errorf("发送指令到设备[%s]失败: %v", deviceAddr, err)
+			break
+		}
+
+		// 从队列中移除已发送的指令
+		commandManager.Remove(deviceAddr)
+		zap.S().Infof("发送指令到设备[%s]成功: %s", deviceAddr, fmt.Sprintf("[% 2X]", data))
+
+		// 如果还有更多指令，给设备一点响应时间
+		if command.GetQueueLength(deviceAddr) > 0 {
+			time.Sleep(100 * time.Millisecond) // 指令间隔，可以根据实际设备响应时间调整
+		}
+	}
 }

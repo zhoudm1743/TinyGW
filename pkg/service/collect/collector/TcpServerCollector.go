@@ -40,6 +40,7 @@ func NewTcpServerCollector(collector models.Collector) *TcpServerCollector {
 		Collector:         collector,
 		deviceConnections: make(map[string]net.Conn),
 		commandResponses:  make(map[string]*CommandResponse),
+		commandManager:    command.GetManager(), // 初始化命令管理器
 	}
 	t.responseCond = sync.NewCond(&t.responseMutex)
 
@@ -269,7 +270,10 @@ func (t *TcpServerCollector) check(data []byte) net.Conn {
 		if data != nil {
 			addr := t.GetDeviceAddr()
 			zap.S().Debugf("TcpServerCollector.check: 写入指令到命令管理器，地址: %s, 指令: %s", addr, fmt.Sprintf("[% 2X]", data))
-			t.commandManager.Remove(addr)
+			// t.commandManager.Remove(addr)
+			if t.commandManager == nil {
+				t.commandManager = command.GetManager() // 确保命令管理器已初始化
+			}
 			t.commandManager.Store(addr, data, time.Now().Unix())
 		}
 		return nil
