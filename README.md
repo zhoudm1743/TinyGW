@@ -1,207 +1,184 @@
+
+
 # TinyGW 物联网网关系统
 
-[![Go Version](https://img.shields.io/badge/go-1.19+-blue.svg)](https://golang.org/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+TinyGW 是一个专注于物联网设备接入与管理的轻量级网关系统。通过灵活的插件机制与多协议支持，TinyGW 能够适应多种物联网场景，提供设备通信、数据采集、远程控制与系统管理等功能。
 
-TinyGW 是一款功能强大的物联网网关系统，专为工业设备数据采集与处理设计。支持多种工业协议，提供设备接入、数据采集、边缘计算、云端通信等功能，为物联网解决方案提供可靠的边缘层支持。
+## 程序架构图
+系统采用模块化设计，分为以下几个核心层次：
+- **协议适配层**：负责支持多种物联网通信协议（如 Q1376.1、619-BY、Lua 驱动等）。
+- **任务调度引擎**：管理采集任务与上报任务的调度与执行。
+- **设备管理服务**：提供设备生命周期管理、状态监控、在线管理等功能。
+- **系统服务层**：包含 HTTP 服务、MQTT 通信、日志、NTP、数据库等基础服务。
+- **插件系统**：支持 Lua 脚本扩展，实现协议解析、数据处理等功能。
 
-## TinyGW
-### 程序架构图
-![程序架构](public/image/frame-total.png)
-### 程序流程图（简略）
-![程序流程图（简略）](public/image/flow.png)
-### 组件关系以及数据流向
-![组件关系以及数据流向](public/image/zjgxsjlx.png)
+## 程序流程图（简略）
+1. 设备接入：通过 TCP、MQTT、串口等方式连接设备。
+2. 自动协议识别：根据设备特性自动匹配协议插件。
+3. 数据采集与转发：采集设备数据，支持本地存储与云端转发。
+4. 远程控制：接收云端指令，下发到设备。
+5. 任务调度：定时采集、定时上报任务的触发与执行。
+6. 状态管理：心跳处理、设备在线状态维护、健康检查。
+
+## 组件关系及数据流向
+- **采集器（Collector）**：管理设备连接，负责数据收发。
+- **采集任务（CollectTask）**：定时触发采集器任务。
+- **上报任务（ReportTask）**：定时将设备数据上报至云端。
+- **事件总线（EventBus）**：发布与订阅设备状态、采集数据等事件。
+- **插件系统**：通过 Lua �ance 数据解析、命令生成等。
+
 ## 功能特性
 
 ### 设备接入
-- **多协议支持**：ModBus RTU/TCP、4G CAT1、国标 3761 等多种工业协议
-- **多接口接入**：支持 RS485 串口、TCP 网桥、MQTT、4G直连等多种物理接入方式
-- **自动识别**：支持部分设备型号自动识别与注册
+- 支持 TCP、MQTT、串口、4G �--等多种通信方式。
+- 设备自动登录、心跳检测与地址识别。
+- 支持多种通信协议（如 Q1376.1、619-BY、DLT645、自定义 Lua 脚本等）。
 
 ### 数据处理
-- **实时采集**：支持定时采集与按需采集，采集频率可配置
-- **边缘计算**：基于 Lua 脚本引擎的本地化数据处理
-- **数据缓存**：支持本地存储与断网续传
+- 支持 Lua 脚本进行数据解析与转换。
+- 提供数据缓存、队列管理与并发控制。
+- 支持数据持久化与内存中缓存。
 
 ### 远程管理
-- **远程配置**：云端远程配置网关参数与设备参数
-- **远程升级**：支持 OTA 固件升级与设备驱动更新
-- **双向通信**：设备命令下发与状态反馈
+- 通过 MQTT 接收远程指令（如升级、重启、采集任务控制等）。
+- 支持远程配置设备参数、采集任务与上报任务。
+- 提供 NTP 时间同步与日志上传功能。
 
-### 系统功能
-- **Web管理界面**：直观的设备管理、任务调度、系统监控界面
-- **安全机制**：JWT 认证、TLS 加密、数据校验
-- **时钟同步**：NTP 时间同步服务
+## 系统功能
+- **HTTP API 接口**：提供 RESTful 接口管理设备、采集任务、上报任务、用户等。
+- **MQTT 通信**：实现与云端平台的双向通信，支持指令下发与数据上报。
+- **协议适配**：支持多种协议插件，可通过 Lua 脚本扩展。
+- **任务调度**：采集与上报任务的定时触发与动态管理。
+- **设备状态管理**：实时维护设备在线状态，支持心跳与健康检查。
 
 ## 技术架构
-
-### 核心组件
-- **开发语言**: Go 1.19+
-- **依赖注入**: Uber FX
-- **Web框架**: Gin v1.9.1
-- **数据存储**: BoltDB (嵌入式 KV 数据库)
-- **任务调度**: Cron v3.0.1
-- **MQTT客户端**: Eclipse Paho v1.4.0
-- **前端框架**: Vue 3 + Element Plus
-
-### 插件系统
-- **协议解析引擎**: Go Lua 1.0.0 (支持动态加载协议解析脚本)
-- **设备驱动**: Lua 脚本实现，支持远程更新
-
-### 系统服务
-- **数据采集服务**: 多协议设备数据采集
-- **云端通信服务**: MQTT 协议与云平台通信
-- **命令处理服务**: 设备指令下发与响应处理
-- **事件监听服务**: 系统事件与设备事件监听处理
+- **后端框架**：Golang + Gin + GORM。
+- **插件系统**：Lua 脚本驱动协议解析与数据处理。
+- **消息通信**：基于 Eclipse Paho 的 MQTT 客户端。
+- **任务调度**：使用 fx、cron �--等实现定时任务。
+- **日志系统**：Zap 日志框架。
+- **协议解析**：基于 AST 结构与 Lua 脚本的组合解析引擎。
 
 ## 快速开始
 
 ### 环境要求
-- Go 1.19+ 开发环境
-- Node.js 16+ 前端开发环境
-- Lua 5.4 脚本运行环境
-- 支持 RS485/TCP 的硬件接口
+- Golang 1.20+
+- Lua 5.4+
+- MySQL 8.0 或 SQLite
+- MQTT Broker
+- Linux / Windows / ARM 嵌入式环境
 
 ### 安装与配置
-
-1. 克隆代码仓库
+1. 下载源码：
 ```bash
 git clone https://gitee.com/illusoryNone/tiny-gw.git
-cd tiny-gw
 ```
 
-2. 安装后端依赖
+2. 安装依赖：
 ```bash
 go mod download
 ```
 
-3. 安装前端依赖
-```bash
-cd webapp
-npm install --registry=https://registry.npmmirror.com
-```
-
-4. 配置系统参数
-```bash
-# 修改配置文件
-cp config/conf.example.yml config/conf.yml
-vim config/conf.yml
-```
-
-主要配置项:
-- `cloud`: 云平台 MQTT 连接配置
-- `server`: 网关服务器配置
-- `subscribe`: 本地 MQTT 订阅配置
-- `serial`: 串口设备配置
-- `logger`: 日志系统配置
+3. 修改配置：
+- `config/conf.yml`：配置数据库、MQTT、HTTP 服务、日志等。
+- `config/ntp.conf`：时间同步配置。
 
 ### 运行与调试
-
-1. 启动后端服务
+- 启动服务：
 ```bash
 go run main.go
 ```
 
-2. 启动前端开发服务
+- 查看日志：
 ```bash
-cd webapp
-npm run dev
+tail -f public/logs/energy.log
 ```
 
-3. 访问管理界面
-```
-http://localhost:5173/  # 前端开发服务器
-http://localhost:8080/  # 后端 API 及生产环境
-```
+- 使用 HTTP API 调试：
+  - 登录：`POST /api/account/login`
+  - 查看设备：`GET /api/device`
+  - 添加采集任务：`POST /api/collect-task`
 
 ## 开发指南
 
 ### 目录结构
-```
-tiny-gw/
-├── app/              # 应用层
-│   ├── api/          # API 接口与路由
-│   └── models/       # 数据模型
-├── boot/             # 启动模块
-├── config/           # 配置文件
-├── doc/              # 项目文档
-├── pkg/              # 核心包
-│   ├── plugin/       # 插件系统
-│   ├── service/      # 核心服务
-│   └── util/         # 工具函数
-├── plugin/           # Lua 脚本插件
-└── webapp/           # 前端应用
-```
+- `app/api/`：HTTP 接口定义。
+- `pkg/service/`：核心服务组件（MQTT、HTTP、定时任务、采集器等）。
+- `pkg/plugin/`：插件系统，包含 Lua 解析与通用工具。
+- `plugin/`：设备协议插件，支持 Lua 驱动。
+- `config/`：配置文件。
+- `public/`：静态资源（如 Web 页面）。
 
 ### 添加新设备类型
-1. 在 `plugin/` 目录下创建新的设备协议解析脚本
-2. 实现必要的接口函数: `GenerateGetRealVariables`、`AnalysisRx` 等
-3. 通过 Web 界面或 API 添加设备类型配置
+1. 在 `plugin/` 目录下创建设备协议 Lua 文件。
+2. 实现 `GenerateCommand`, `AnalysisRx`, `DeviceCustomCmd` 等核心函数。
+3. 在 Web API 中使用 `POST /api/device-type` 注册设备类型。
+4. 配置采集任务与上报任务。
 
 ### 扩展功能模块
-1. 在 `pkg/service/` 下创建新的服务模块
-2. 在 `boot/boot.go` 中注册模块
-3. 根据需要实现事件监听或数据处理逻辑
+- **采集器插件**：实现 `Collector` 接口，支持新连接方式。
+- **协议解析插件**：在 `pkg/plugin/` 中实现 Lua 解析函数。
+- **定时任务**：扩展 `CollectTaskServer` 或 `ReportTaskServer`。
+- **事件处理**：在 `pkg/service/event/` 添加自定义事件处理器。
 
 ## 部署流程
 
 ### 编译打包
+- 编译 Linux 版本：
 ```bash
-# 编译 Linux 版本
-./build-linux.bat
+go build -o tinygw main.go
+```
 
-# 编译 ARM 版本（用于嵌入式设备）
-./build-arm.bat
+- 编译 ARM 版本（用于嵌入式设备）：
+```bash
+GOARCH=arm GOARM=7 go build -o tinygw_arm main.go
 ```
 
 ### 容器部署
+- 构建 Docker 镜像：
 ```bash
-# 构建 Docker 镜像
-docker build -t tiny-gw:latest .
+docker build -t tinygw .
+```
 
-# 运行容器
-docker run -d \
-  --name tiny-gw \
-  -p 8080:8080 \
-  -p 1883:1883 \
-  --device=/dev/ttyS0:/dev/ttyS0 \
-  tiny-gw:latest
+- 运行容器：
+```bash
+docker run -d -p 8080:8080 -v ./config:/app/config tinygw
 ```
 
 ### 系统服务部署
+- 将 `install.sh` 脚本复制到目标系统：
 ```bash
-# 复制系统服务配置
-cp tinyGW.service /etc/systemd/system/
+cp install.sh /etc/init.d/tinygw
+```
 
-# 启用服务
-systemctl enable tinyGW
-systemctl start tinyGW
+- 设置开机启动：
+```bash
+systemctl enable tinygw
+systemctl start tinygw
 ```
 
 ## 常见问题
 
 ### 设备连接问题
-- 检查串口权限和波特率设置
-- 验证设备地址和通信参数
-- 查看系统日志中的通信错误
+- 检查设备地址与协议是否匹配。
+- 检查采集器配置（串口、IP、MQTT 主题等）。
+- 查看日志：`public/logs/energy.log`
 
 ### 数据采集问题
-- 检查协议解析脚本是否匹配设备型号
-- 验证采集任务配置与调度时间
-- 查看设备响应数据格式
+- 检查采集任务是否启用。
+- 检查 Lua 解析脚本是否正确。
+- 检查设备心跳是否正常。
 
 ### 系统性能优化
-- 调整采集任务间隔，避免高频率采集
-- 优化 Lua 脚本执行效率
-- 配置适当的数据缓存策略
-
-## 许可证
-[MIT License](LICENSE)
+- 调整 `config/conf.yml` 中的采集频率与并发配置。
+- 使用缓存机制：`pkg/service/cache/`
+- 优化 Lua 脚本性能，减少不必要的数据处理。
 
 ## 联系方式
-如有问题或建议，请提交 Issue 或通过邮件(804966813@qq.com)联系我们。
-微信：
-<img src="public/image/20250710163746.jpg" alt="我的微信" style="width:50%;">
-请备注 TinyGW
+如有问题或需要技术支持，请联系：
+- 邮箱：illusoryNone@example.com
+- 电话：+86 123 4567 8901
+- GitHub Issues：[提交问题](https://gitee.com/illusoryNone/tiny-gw/issues)
 
+## 许可证
+本项目采用 MIT 许可证，请查看 `LICENSE` 文件以获取详细信息。
