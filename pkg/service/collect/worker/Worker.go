@@ -9,6 +9,7 @@ import (
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/collect/channel"
 	"tinyGW/pkg/service/collect/collector"
+	"tinyGW/pkg/service/command"
 	"tinyGW/pkg/service/conf"
 	"tinyGW/pkg/service/event"
 	"tinyGW/pkg/service/script"
@@ -36,6 +37,7 @@ type worker struct {
 	stopChan             chan int
 	config               *conf.Config
 	eventBus             *event.EventService
+	commandManager       *command.Manager
 }
 
 func NewWorker(
@@ -44,10 +46,11 @@ func NewWorker(
 	config *conf.Config,
 	eventBus *event.EventService,
 	deviceTypeRepository repository.DeviceTypeRepository,
+	commandManager *command.Manager,
 ) Worker {
 	result := &worker{
 		PriorityChannel:      channel.NewPriorityChannel(),
-		Collector:            collector.ConnectorFactory(domainCollector),
+		Collector:            collector.ConnectorFactory(domainCollector, commandManager),
 		Runner:               script.NewLuaRunner(),
 		deviceRepository:     deviceRepository,
 		dataChan:             make(chan []byte, 1024),
@@ -55,6 +58,7 @@ func NewWorker(
 		config:               config,
 		eventBus:             eventBus,
 		deviceTypeRepository: deviceTypeRepository,
+		commandManager:       commandManager,
 	}
 	zap.S().Info("创建数据采集线程！", result.Collector)
 	// RPC 命令优先级高

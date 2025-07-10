@@ -10,8 +10,12 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"tinyGW/app/api/repository"
 	"tinyGW/app/models"
+	"tinyGW/pkg/service/command"
 	"tinyGW/pkg/service/conf"
+	"tinyGW/pkg/service/event"
+	le "tinyGW/pkg/service/listener/event"
 	"tinyGW/pkg/service/script"
 
 	"go.uber.org/zap"
@@ -62,12 +66,27 @@ var (
 	temporaryErrorInterval = int64(300) // 错误日志间隔(秒)
 )
 
-func Start() {
+type Listener struct {
+	EventBus         *event.EventService
+	DeviceRepository repository.DeviceRepository
+	CommandManager   *command.Manager
+}
+
+// NewListener 创建监听器
+func NewListener(eventBus *event.EventService, deviceRepository repository.DeviceRepository, commandManager *command.Manager) *Listener {
+	return &Listener{
+		EventBus:         eventBus,
+		DeviceRepository: deviceRepository,
+		CommandManager:   command.GetManager(),
+	}
+}
+
+func (lt *Listener) Start() {
 	defer func() {
 		if r := recover(); r != nil {
 			zap.S().Infoln("监听器异常重启:", r)
 			time.Sleep(time.Second)
-			Start()
+			lt.Start()
 		}
 	}()
 
@@ -100,18 +119,18 @@ func Start() {
 	}
 
 	// 清理之前的监听器
-	Stop()
+	lt.Stop()
 
 	// 启动设备健康检查
 	go startDeviceHealthCheck()
 
 	// 启动性能统计
-	if useOptimized {
-		go startPerformanceStats()
-	}
+	// if useOptimized {
+	// 	go startPerformanceStats()
+	// }
 
 	// 初始化3761-BY事件处理函数
-	Init3761EventHandlers()
+	le.Init3761EventHandlers()
 
 	// 初始化监听器和停止信号通道
 	listeners = make([]net.Listener, 0, len(ports))
@@ -135,12 +154,12 @@ func Start() {
 		wg.Add(1)
 		go func(l net.Listener, stopCh chan struct{}) {
 			defer wg.Done()
-			startListener(l, stopCh)
+			lt.startListener(l, stopCh)
 		}(listener, stopChan)
 	}
 }
 
-func startListener(listener net.Listener, stopChan chan struct{}) {
+func (lt *Listener) startListener(listener net.Listener, stopChan chan struct{}) {
 loop:
 	for {
 		select {
@@ -157,13 +176,13 @@ loop:
 				zap.S().Errorln("Accept error:", err)
 				break loop
 			}
-			go handleConn(conn)
+			go lt.handleConn(conn)
 		}
 	}
 }
 
 // Stop 关闭所有监听器
-func Stop() {
+func (lt *Listener) Stop() {
 	// 发送停止信号给所有监听器
 	for _, stopChan := range stopChans {
 		close(stopChan)
@@ -184,7 +203,7 @@ func Stop() {
 	stopChans = nil
 }
 
-func handleConn(conn net.Conn) {
+func (lt *Listener) handleConn(conn net.Conn) {
 	// 从对象池获取缓冲区
 	buf := GetDataBuffer()
 	defer ReturnDataBuffer(buf)
@@ -266,12 +285,12 @@ func handleConn(conn net.Conn) {
 		// 复制一份数据，避免在异步处理中buf被覆盖
 		dataCopy := make([]byte, n)
 		copy(dataCopy, buf[:n])
-		go handleData(dataCopy, conn)
+		go lt.handleData(dataCopy, conn)
 	}
 }
 
 // 是设备主动上报的，需要解析数据，处理登录，心跳，设备事件
-func handleData(b []byte, conn net.Conn) {
+func (lt *Listener) handleData(b []byte, conn net.Conn) {
 	if len(b) < 4 {
 		zap.S().Warnln("数据长度不足，忽略处理")
 		return
@@ -293,14 +312,19 @@ func handleData(b []byte, conn net.Conn) {
 		// zap.S().Debugf("标准提取设备地址: %s", deviceAddr)
 
 		// 添加到在线设备
-		addOnlineDevice(deviceAddr, protocol, conn)
+		// addOnlineDevice(deviceAddr, protocol, conn)
 
 		// 同时将设备地址和连接添加到Echo系统
-		RegisterEchoClient(deviceAddr, conn)
+		// RegisterEchoClient(deviceAddr, conn)
 		// zap.S().Infof("2025F183-37设备已注册到Echo系统, 地址: %s", deviceAddr)
 
 		// 通知数据回调函数
 		notifyDataCallbacks(deviceAddr, b)
+
+		le.Handle2025F183Event(deviceAddr, b, lt.DeviceRepository, lt.EventBus)
+
+		// 是否需要发送指令
+		le.Handle2025F183Cmd(deviceAddr, lt.DeviceRepository, lt.EventBus, lt.CommandManager, conn)
 
 		return
 	}
@@ -461,12 +485,12 @@ func handleData(b []byte, conn net.Conn) {
 			// 如果是F254主动上报数据，调用事件处理函数
 			if afn == 0x10 && fn == 254 {
 				zap.S().Infof("处理3761-BY F254主动上报事件: 设备=%s", deviceAddr)
-				Handle3761Event(deviceAddr, b)
+				le.Handle3761EventWithPublish(deviceAddr, b, lt.DeviceRepository, lt.EventBus)
 			}
 		}
 
 		// 通知数据回调函数（过滤掉确认响应）
-		if !isConfirmResponse(b) {
+		if !lt.isConfirmResponse(b) {
 			notifyDataCallbacks(deviceAddr, b)
 		} else {
 			zap.S().Debugf("过滤确认响应，不通知数据回调函数: 设备=%s, AFN=%02X", deviceAddr, b[12])
@@ -475,7 +499,7 @@ func handleData(b []byte, conn net.Conn) {
 		zap.S().Warnln("数据解析失败，协议:", protocol, "设备地址:", deviceAddr)
 
 		// 即使解析失败也通知回调函数，让上层决定如何处理（但也要过滤确认响应）
-		if !isConfirmResponse(b) {
+		if !lt.isConfirmResponse(b) {
 			notifyDataCallbacks(deviceAddr, b)
 		} else {
 			zap.S().Debugf("过滤确认响应，不通知数据回调函数: 设备=%s, AFN=%02X", deviceAddr, b[12])
@@ -484,7 +508,7 @@ func handleData(b []byte, conn net.Conn) {
 }
 
 // isConfirmResponse 判断是否为确认响应帧或主动上报数据
-func isConfirmResponse(data []byte) bool {
+func (lt *Listener) isConfirmResponse(data []byte) bool {
 	if len(data) < 13 {
 		return false
 	}
@@ -587,7 +611,7 @@ func extractDeviceAddress(data []byte, protocol string, conn net.Conn) string {
 			for i := 8; i >= 2; i-- {
 				addr += fmt.Sprintf("%02X", data[i])
 			}
-			zap.S().Debugf("提取2025F183-37协议地址: %s, 原始数据: [% 2X]", addr, data[2:9])
+			// zap.S().Debugf("提取2025F183-37协议地址: %s, 原始数据: [% 2X]", addr, data[2:9])
 			return addr
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"tinyGW/pkg/service/cache"
 	"tinyGW/pkg/service/cloud"
 	"tinyGW/pkg/service/collect"
+	"tinyGW/pkg/service/command"
 	"tinyGW/pkg/service/conf"
 	"tinyGW/pkg/service/event"
 	"tinyGW/pkg/service/http"
@@ -35,6 +36,8 @@ var Module = fx.Options(
 	script.Module,
 	collect.Module,
 	task.Module,
+	command.Module,
+	listener.Module,
 
 	// 运行时间监听模块
 	fx.Invoke(io.StartTime),
@@ -57,6 +60,7 @@ func setup(
 	db *gorm.DB,
 	ntpSrv *ntp.NtpService,
 	eventBus *event.EventService,
+	listener *listener.Listener,
 ) {
 	lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {

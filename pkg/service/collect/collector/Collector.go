@@ -4,6 +4,7 @@ import (
 	"net"
 	"sync"
 	"tinyGW/app/models"
+	"tinyGW/pkg/service/command"
 )
 
 var (
@@ -25,7 +26,7 @@ type Collector interface {
 }
 
 // ConnectorFactory 【采集器接口】工厂，根据【采集接口】创建不同的【采集器】
-func ConnectorFactory(collector models.Collector) Collector {
+func ConnectorFactory(collector models.Collector, commandManager *command.Manager) Collector {
 	// 检查是否已经存在该采集器的实例
 	CollectorInstancesMutex.RLock()
 	if instance, exists := CollectorInstances[collector.Name]; exists {
@@ -50,6 +51,7 @@ func ConnectorFactory(collector models.Collector) Collector {
 		// 使用增强版的TcpServerCollector，支持4G水表等协议
 		tcpServer := &TcpServerCollector{
 			Collector:         collector,
+			commandManager:    commandManager,
 			deviceConnections: make(map[string]net.Conn),
 			commandResponses:  make(map[string]*CommandResponse),
 		}

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"tinyGW/app/models"
+	"tinyGW/pkg/service/command"
 	"tinyGW/pkg/service/listener"
 
 	"go.uber.org/zap"
@@ -29,6 +30,8 @@ type TcpServerCollector struct {
 
 	// 当前使用的设备地址
 	currentDeviceAddr string
+
+	commandManager *command.Manager
 }
 
 // NewTcpServerCollector 创建新的TCP服务器采集器
@@ -74,7 +77,7 @@ func (t *TcpServerCollector) Open(device *models.Device) bool {
 	t.currentDeviceAddr = device.Address
 
 	// 从Echo连接池获取连接
-	conn := t.check()
+	conn := t.check(nil)
 	if conn != nil {
 		t.connectionMutex.Lock()
 		t.deviceConnections[device.Address] = conn
@@ -108,7 +111,7 @@ func (t *TcpServerCollector) Close() bool {
 	t.responseMutex.Unlock()
 
 	// 关闭Echo连接
-	conn := t.check()
+	conn := t.check(nil)
 	if conn != nil {
 		if err := conn.Close(); err != nil {
 			zap.S().Error("关闭Tcp客户端失败!", t.TcpServer)
@@ -133,7 +136,7 @@ func (t *TcpServerCollector) Read(data []byte) int {
 	}
 
 	// 首先尝试直接从连接读取数据
-	conn := t.check()
+	conn := t.check(nil)
 	if conn != nil {
 		conn.SetReadDeadline(time.Now().Add(timeout))
 		cnt, err := conn.Read(data)
@@ -217,13 +220,14 @@ func (t *TcpServerCollector) Write(data []byte) int {
 	t.commandResponses = make(map[string]*CommandResponse)
 	t.responseMutex.Unlock()
 
-	conn := t.check()
+	conn := t.check(data)
 	if conn != nil {
 		// 设置写入超时
 		conn.SetWriteDeadline(time.Now().Add(time.Duration(t.GetTimeout()) * time.Second))
 
 		cnt, err := conn.Write(data)
 		if err != nil {
+
 			t.Close()
 			t.Open(nil)
 			zap.S().Errorf("TcpServerCollector.Write: 写入失败: %v", err)
@@ -259,9 +263,15 @@ func (t *TcpServerCollector) GetInterval() int {
 }
 
 // 检查连接
-func (t *TcpServerCollector) check() net.Conn {
+func (t *TcpServerCollector) check(data []byte) net.Conn {
 	echo := listener.GetEcho(t.TcpServer.Name)
 	if echo.Conn == nil {
+		if data != nil {
+			addr := t.GetDeviceAddr()
+			zap.S().Debugf("TcpServerCollector.check: 写入指令到命令管理器，地址: %s, 指令: %s", addr, fmt.Sprintf("[% 2X]", data))
+			t.commandManager.Remove(addr)
+			t.commandManager.Store(addr, data, time.Now().Unix())
+		}
 		return nil
 	}
 	return echo.Conn
@@ -319,7 +329,7 @@ func (t *TcpServerCollector) handleDeviceData(deviceAddr string, data []byte) {
 
 // UpdateConnections 更新连接映射
 func (t *TcpServerCollector) UpdateConnections() {
-	conn := t.check()
+	conn := t.check(nil)
 	if conn != nil && t.currentDeviceAddr != "" {
 		t.connectionMutex.Lock()
 		t.deviceConnections[t.currentDeviceAddr] = conn
@@ -360,6 +370,14 @@ func (t *TcpServerCollector) cleanupOldResponses() {
 	if cleanedCount > 0 {
 		zap.S().Debugf("TcpServerCollector.cleanupOldResponses: 清理了 %d 条旧响应数据", cleanedCount)
 	}
+}
+
+func (t *TcpServerCollector) GetDeviceAddr() string {
+	addr := t.currentDeviceAddr
+	if addr == "" {
+		addr = t.TcpServer.Name
+	}
+	return addr
 }
 
 // 确保实现了Collector接口

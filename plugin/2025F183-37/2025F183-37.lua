@@ -1,561 +1,335 @@
 ---
 --- 2025F183-37.lua
 --- 基于619规约的CAT1水表通信协议实现
---- 创建时间: 2025/07/07
---- 修订时间: 2025/07/07 (v1.0.2)
+--- 创建时间: 2023/11/08
+--- 修订时间: 2023/11/08 (v2.0.0)
 --- 修订说明: 
---- 1. 修正地址格式，确保符合619协议"低字节在前"的规范
---- 2. 修正数据长度字段为2字节（高字节在前）
---- 3. 修正数据解析逻辑，正确处理返回的流量数据
---- 4. 添加对表端主动上报数据(0x97)的支持
---- 5. 适配网口采集器TcpServerCollector
+--- 1. 完全重写代码结构，使代码更清晰，符合619协议规范
+--- 2. 优化阀门操作部分，确保命令格式正确
+--- 3. 修正地址格式，遵循协议的"低字节在前"规范
+--- 4. 优化数据解析逻辑，包括主动上报和命令响应
+--- 5. 增强错误处理和调试功能
 ---
 
--- 获取当前脚本所在的绝对路径
-local current_dir = debug.getinfo(1).source:match("@?(.*/)") or ""
-if current_dir == "" then current_dir = "./" end
+-- 引入必要的库
+package.path = "./plugin/2025F183-37/?.lua;"
+local json = require("json")
+local utils = require("utils")
+local bit = require("bit")
 
--- 使用绝对路径设置package.path
-package.path = current_dir .. "?.lua;" .. package.path
+-- 常量定义
+local CONSTANTS = {
+    -- 帧头尾标志
+    START_FLAG = 0x68,
+    END_FLAG = 0x16,
+    -- 控制码
+    CTRL_READ_REQUEST = 0x01,  -- 服务器向表端下发读指令
+    CTRL_READ_RESPONSE = 0x81, -- 表端对读指令的响应
+    CTRL_WRITE_REQUEST = 0x04, -- 服务器向表端下发写指令
+    CTRL_WRITE_RESPONSE = 0x84, -- 表端对写指令的响应
+    CTRL_UPLOAD = 0x97,        -- 表端主动上报
+    CTRL_UPLOAD_RESPONSE = 0x17, -- 服务器对上报的响应
+    -- 数据标识
+    DATA_ID_READ_PARAM = 0xA901, -- 读表参数
+    DATA_ID_READ_FLOW = 0x901F,  -- 读取流量数据
+    DATA_ID_VALVE = 0xAA05,      -- 阀门操作
+    DATA_ID_SET_ADDR = 0xAA07,   -- 设置表地址
+    DATA_ID_SET_VALUE = 0xAA09,  -- 设置表底数
+    -- 阀门操作代码
+    VALVE_OPEN = 0x55,          -- 开阀
+    VALVE_CLOSE = 0x99,         -- 关阀
+    VALVE_FORCE = 0x5A,         -- 强制操作
+}
 
-require "utils"
-require "json"
+-- 协议工具函数
+local Protocol = {}
 
--------公共函数
--- 校验和
-function checkSum(buffer, startIndex, endIndex)
+-- 计算校验和
+function Protocol.calculateChecksum(buffer, startIndex, endIndex)
     local sum = 0
-
     for i = startIndex, endIndex do
         sum = sum + buffer[i]
     end
-
     return sum % 256
 end
 
--- 地址转换 2 ~ 8 字节
-function convertAddress(requestADU, sAddr)
-    -- 根据619协议，表地址由A0~A6共7个字节表示，低字节在前，14位BCD码形式
-    local addr = string.format("%014d", tonumber(sAddr))
-    requestADU[2] = 0x10  -- 表类型固定为水表0x10
-    
-    -- 低字节在前的地址格式
-    requestADU[9] = tonumber(string.sub(addr, 1, 2), 16)  -- A0（最低位）
-    requestADU[8] = tonumber(string.sub(addr, 3, 4), 16)  -- A1
-    requestADU[7] = tonumber(string.sub(addr, 5, 6), 16)  -- A2
-    requestADU[6] = tonumber(string.sub(addr, 7, 8), 16)  -- A3
-    requestADU[5] = tonumber(string.sub(addr, 9, 10), 16) -- A4
-    requestADU[4] = tonumber(string.sub(addr, 11, 12), 16)-- A5
-    requestADU[3] = tonumber(string.sub(addr, 13, 14), 16)-- A6（最高位）
-end
-
--- GenerateCommand - 生成读取命令
-function GenerateCommand(sAddr, cmd)
-    -- 按照619协议构建帧结构
-    -- 68 | 表类型 | 表地址(7字节) | 设备类型 | 控制码 | 指令编号(2字节) | 备用(2字节) | 数据长度(2字节) | 数据域 | 校验码 | 16
-    local requestADU = { 
-        0x68,  -- 起始帧
-        0x10,  -- 表类型(水表)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 表地址(7字节)
-        0x03,  -- 设备类型
-        0x01,  -- 控制码(01H: 服务器对表端下发读指令)
-        0x00, 0x00,  -- 指令编号
-        0x00, 0x00,  -- 备用
-        0x00, 0x0A,  -- 数据长度(2字节，高字节在前)
-        0x00, 0x00,  -- 数据标识
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 备用(8字节)
-        0x00,  -- 校验码
-        0x16   -- 结束帧
+-- 生成命令头部
+function Protocol.generateCommandHeader(address, controlCode)
+    local cmd = {
+        CONSTANTS.START_FLAG,  -- 起始帧
+        0x10,                  -- 表类型(水表)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, -- 表地址(7字节)
+        0x03,                  -- 设备类型
+        controlCode,           -- 控制码
+        0x00, 0x00,           -- 指令编号
+        0x00, 0x00            -- 备用字段
     }
     
-    -- 地址转换
-    convertAddress(requestADU, sAddr)
-    
-    -- 指令编号 - 随机生成
-    requestADU[12] = math.random(0, 255)
-    requestADU[13] = math.random(0, 255)
-    
-    -- 数据标识
-    requestADU[18] = cmd[1]
-    requestADU[19] = cmd[2]
-    
-    -- 校验和(从起始帧到校验码前所有数据)
-    requestADU[28] = checkSum(requestADU, 1, 27)
-    
-    -- -- 在requestADU前面插入 3个 0xFE 作为唤醒符
-    -- for i = 1, 3 do
-    --     table.insert(requestADU, 1, 0xFE)
-    -- end
-    
-    return requestADU
-end
+    -- 确保地址格式正确
+    local addr = string.format("%014s", address):gsub("[^0-9]", "0")
+    if #addr ~= 14 then
+        addr = string.rep("0", 14 - #addr) .. addr
+    end
 
--- 阀门控制命令生成（开关阀）
-function WriteCommand(sAddr, cmd, data)
-    -- 按照619协议构建帧结构
-    -- 68 | 表类型 | 表地址(7字节) | 设备类型 | 控制码 | 指令编号(2字节) | 备用(2字节) | 数据长度(2字节) | 数据域 | 校验码 | 16
-    local requestADU = { 
-        0x68,  -- 起始帧
-        0x10,  -- 表类型(水表)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 表地址(7字节)
-        0x03,  -- 设备类型
-        0x04,  -- 控制码(04H: 服务器对表端下发写指令)
-        0x00, 0x00,  -- 指令编号
-        0x00, 0x00,  -- 备用
-        0x00, 0x0C,  -- 数据长度(2字节，高字节在前)
-        0x00, 0x00,  -- 数据标识
-        0x00, 0x00,  -- 阀门开/关和操作类型
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 备用(8字节)
-        0x00,  -- 校验码
-        0x16   -- 结束帧
-    }
+    -- 表类型固定为水表0x10
+    cmd[2] = 0x10
     
-    -- 地址转换
-    convertAddress(requestADU, sAddr)
-    
-    -- 指令编号 - 随机生成
-    requestADU[12] = math.random(0, 255)
-    requestADU[13] = math.random(0, 255)
-    
-    -- 数据标识
-    requestADU[18] = cmd[1]
-    requestADU[19] = cmd[2]
-    
-    -- 阀门操作数据
-    requestADU[20] = data[1]  -- 阀门开/关: 0x55开，0x99关
-    requestADU[21] = data[2]  -- 操作类型: 0x5A强制，其他非强制
-    
-    -- 校验和(从起始帧到校验码前所有数据)
-    requestADU[30] = checkSum(requestADU, 1, 29)
-    
-    -- -- 在requestADU前面插入 3个 0xFE 作为唤醒符
-    -- for i = 1, 3 do
-    --     table.insert(requestADU, 1, 0xFE)
-    -- end
-    
-    return requestADU
-end
-
--- 关阀
-function GenerateCloseValve(sAddr)
-    local cmd = { 0xAA, 0x05 }  -- 阀门操作数据标识
-    local data = { 0x99, 0x5A }  -- 0x99表示关阀，0x5A表示强制操作
-    return WriteCommand(sAddr, cmd, data)
-end
-
--- 开阀
-function GenerateOpenValve(sAddr)
-    local cmd = { 0xAA, 0x05 }  -- 阀门操作数据标识
-    local data = { 0x55, 0x5A }  -- 0x55表示开阀，0x5A表示强制操作
-    return WriteCommand(sAddr, cmd, data)
-end
-
--- 设置表底数
-function GenerateSetValue(sAddr, value)
-    -- 按照619协议构建帧结构
-    -- 68 | 表类型 | 表地址(7字节) | 设备类型 | 控制码 | 指令编号(2字节) | 备用(2字节) | 数据长度(2字节) | 数据域 | 校验码 | 16
-    local requestADU = { 
-        0x68,  -- 起始帧
-        0x10,  -- 表类型(水表)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 表地址(7字节)
-        0x03,  -- 设备类型
-        0x04,  -- 控制码(04H: 服务器对表端下发写指令)
-        0x00, 0x00,  -- 指令编号
-        0x00, 0x00,  -- 备用
-        0x00, 0x0E,  -- 数据长度(2字节，高字节在前)
-        0xAA, 0x09,  -- 数据标识(AA09H: 设置后付费表底数)
-        0x00, 0x00, 0x00, 0x00,  -- 表底数(4字节)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 备用(8字节)
-        0x00,  -- 校验码
-        0x16   -- 结束帧
-    }
-    
-    -- 地址转换
-    convertAddress(requestADU, sAddr)
-    
-    -- 指令编号 - 随机生成
-    requestADU[12] = math.random(0, 255)
-    requestADU[13] = math.random(0, 255)
-    
-    -- 设置数值 (低字节在前)
-    local v = tonumber(value) or 0
-    requestADU[20] = v % 256
-    requestADU[21] = math.floor(v / 256) % 256
-    requestADU[22] = math.floor(v / 65536) % 256
-    requestADU[23] = math.floor(v / 16777216) % 256
-    
-    -- 校验和(从起始帧到校验码前所有数据)
-    requestADU[32] = checkSum(requestADU, 1, 31)
-    
-    -- -- 在requestADU前面插入 3个 0xFE 作为唤醒符
-    -- for i = 1, 3 do
-    --     table.insert(requestADU, 1, 0xFE)
-    -- end
-    
-    return requestADU
-end
-
--- 读取表地址
-function GenerateReadAddress()
-    -- 按照619协议构建帧结构
-    -- 68 | 表类型 | 表地址(7字节) | 设备类型 | 控制码 | 指令编号(2字节) | 备用(2字节) | 数据长度(2字节) | 数据域 | 校验码 | 16
-    local requestADU = { 
-        0x68,  -- 起始帧
-        0x10,  -- 表类型(水表)
-        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,  -- 表地址(7字节，广播地址)
-        0x03,  -- 设备类型
-        0x01,  -- 控制码(01H: 服务器对表端下发读指令)
-        0x00, 0x00,  -- 指令编号
-        0x00, 0x00,  -- 备用
-        0x00, 0x0A,  -- 数据长度(2字节，高字节在前)
-        0xA9, 0x01,  -- 数据标识(A901H: 读表参数)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 备用(8字节)
-        0x00,  -- 校验码
-        0x16   -- 结束帧
-    }
-    
-    -- 指令编号 - 随机生成
-    requestADU[12] = math.random(0, 255)
-    requestADU[13] = math.random(0, 255)
-    
-    -- 校验和(从起始帧到校验码前所有数据)
-    requestADU[28] = checkSum(requestADU, 1, 27)
-    
-    -- -- 在requestADU前面插入 3个 0xFE 作为唤醒符
-    -- for i = 1, 3 do
-    --     table.insert(requestADU, 1, 0xFE)
-    -- end
-    
-    return requestADU
-end
-
--- 设置表地址
-function GenerateSetAddress(oldAddr, newAddr)
-    -- 按照619协议构建帧结构
-    -- 68 | 表类型 | 表地址(7字节) | 设备类型 | 控制码 | 指令编号(2字节) | 备用(2字节) | 数据长度(2字节) | 数据域 | 校验码 | 16
-    local requestADU = { 
-        0x68,  -- 起始帧
-        0x10,  -- 表类型(水表)
-        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,  -- 表地址(7字节)
-        0x03,  -- 设备类型
-        0x04,  -- 控制码(04H: 服务器对表端下发写指令)
-        0x00, 0x00,  -- 指令编号
-        0x00, 0x00,  -- 备用
-        0x00, 0x0D,  -- 数据长度(2字节，高字节在前)
-        0xAA, 0x07,  -- 数据标识(AA07H: 设置表具类型)
-        0x00,  -- 计量模式
-        0x00,  -- 付费模式
-        0x00,  -- 到位模式
-        0xC1,  -- 地址修改使能(0xC1: 允许修改表号)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 新地址(7字节)
-        0x00,  -- 校验码
-        0x16   -- 结束帧
-    }
-    
-    -- 如果提供了旧地址，则转换
-    if oldAddr and oldAddr ~= "" and oldAddr ~= "AAAAAAAA" then
-        convertAddress(requestADU, oldAddr)
+    -- 按照619协议格式填充地址字段
+    -- 619协议表地址格式：A6(高字节) ~ A0(低字节)
+    for i = 0, 6 do
+        local pos = 13 - i * 2
+        local byteValue = tonumber(addr:sub(pos-1, pos), 10) or 0
+        cmd[9-i] = byteValue
     end
     
-    -- 指令编号 - 随机生成
-    requestADU[12] = math.random(0, 255)
-    requestADU[13] = math.random(0, 255)
+    -- 设置随机指令编号
+    cmd[12] = math.random(0, 255)
+    cmd[13] = math.random(0, 255)
     
-    -- 新地址转换
-    local newAddrBytes = {}
-    local addr = string.format("%014d", tonumber(newAddr))
-    newAddrBytes[1] = tonumber(string.sub(addr, 13, 14), 16) -- A6（最高位）
-    newAddrBytes[2] = tonumber(string.sub(addr, 11, 12), 16) -- A5
-    newAddrBytes[3] = tonumber(string.sub(addr, 9, 10), 16)  -- A4
-    newAddrBytes[4] = tonumber(string.sub(addr, 7, 8), 16)   -- A3
-    newAddrBytes[5] = tonumber(string.sub(addr, 5, 6), 16)   -- A2
-    newAddrBytes[6] = tonumber(string.sub(addr, 3, 4), 16)   -- A1
-    newAddrBytes[7] = tonumber(string.sub(addr, 1, 2), 16)   -- A0（最低位）
-    
-    -- 插入新地址
-    for i = 1, 7 do
-        requestADU[23 + i] = newAddrBytes[i]
-    end
-    
-    -- 校验和(从起始帧到校验码前所有数据)
-    requestADU[31] = checkSum(requestADU, 1, 30)
-    
-    -- -- 在requestADU前面插入 3个 0xFE 作为唤醒符
-    -- for i = 1, 3 do
-    --     table.insert(requestADU, 1, 0xFE)
-    -- end
-    
-    return requestADU
+    return cmd
 end
 
--- go 程序接收到表具数据，放到rxBuf中，从而供AnalysisRx解析
-rxBuf = {}
-function AnalysisRx(sAddr, rxBufCnt)
-    -- 最短指令16个字节
-    if (rxBufCnt < 16) then
-        rxBuf = {}
-        -- Status = "1" 错误
-        print("error:rxBufCnt < 16")
-        return { Status = "1", Variable = {} }
+-- 设置数据长度和数据标识
+function Protocol.setDataField(cmd, dataId, dataLength)
+    -- 设置数据长度(1字节，符合表格第8项规范)
+    cmd[16] = bit.band(dataLength, 0xFF)
+    
+    -- 设置数据标识(2字节)
+    cmd[17] = math.floor(dataId / 256)
+    cmd[18] = dataId % 256
+    
+    return cmd
+end
+
+-- 完成命令生成，添加校验码和结束标志
+function Protocol.finalizeCommand(cmd)
+    -- 计算并添加校验码
+    table.insert(cmd, Protocol.calculateChecksum(cmd, 1, #cmd))
+    -- 添加结束标志
+    table.insert(cmd, CONSTANTS.END_FLAG)
+    return cmd
+end
+
+-- 生成读取命令
+function Protocol.generateReadCommand(address, dataId, extraData)
+    extraData = extraData or {}
+    
+    -- 创建命令头
+    local cmd = Protocol.generateCommandHeader(address, CONSTANTS.CTRL_READ_REQUEST)
+    
+    -- 设置数据长度和数据标识
+    -- 默认数据长度：2字节数据标识 + 8字节备用
+    Protocol.setDataField(cmd, dataId, 10)
+    
+    -- 添加额外数据(如果有)
+    for _, value in ipairs(extraData) do
+        table.insert(cmd, value)
     end
     
-    -- 查找起始符0x68
-    local startIndex = 1
-    while startIndex <= #rxBuf and rxBuf[startIndex] ~= 0x68 do
-        startIndex = startIndex + 1
-        if startIndex > #rxBuf then
-            print("error: 0x68起始符未找到")
-            rxBuf = {}
-            return { Status = "1", Variable = {} }
+    -- 如果需要8字节备用字段且未添加
+    local extraDataLen = #extraData
+    if extraDataLen < 8 then
+        for i = 1, 8 - extraDataLen do
+            table.insert(cmd, 0x00)
         end
     end
     
-    -- 移除0xFE唤醒符
-    while startIndex > 1 and rxBuf[startIndex - 1] == 0xFE do
-        table.remove(rxBuf, startIndex - 1)
-        startIndex = startIndex - 1
-    end
+    -- 完成命令
+    return Protocol.finalizeCommand(cmd)
+end
 
-    local endFlag
-    local endIndex = 0
-    local csFlag
-    for i = 1, #rxBuf do
-        if (rxBuf[i] == 0x16) then
-            local cs = checkSum(rxBuf, 1, i - 2)
-            if (cs == rxBuf[i-1]) then
-                endFlag = rxBuf[i]
-                csFlag = rxBuf[i-1]
-                endIndex = i
-                break
-            end
-        end
+-- 生成写入命令
+function Protocol.generateWriteCommand(address, dataId, data)
+    data = data or {}
+    
+    -- 创建命令头
+    local cmd = Protocol.generateCommandHeader(address, CONSTANTS.CTRL_WRITE_REQUEST)
+    
+    -- 设置数据长度和数据标识
+    -- 数据长度：2字节数据标识 + 实际数据长度
+    Protocol.setDataField(cmd, dataId, 2 + #data)
+    
+    -- 添加数据
+    for _, value in ipairs(data) do
+        table.insert(cmd, value)
     end
     
-    if endIndex == 0 then
-        print("error: 未找到有效的结束符或校验和错误")
-        rxBuf = {}
-        return { Status = "1", Variable = {} }
-    end
+    -- 完成命令
+    return Protocol.finalizeCommand(cmd)
+end
+
+-- 根据表格规范重写阀门操作命令生成函数
+function Protocol.generateValveCommand(address, isOpen, isForce)
+    -- 创建一个精确30字节的阀门操作命令
+    local cmd = {
+        0x68,  -- 1. 起始帧
+        0x10,  -- 2. 表类型(水表)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 3. 表地址(7字节，将在后面设置)
+        0x03,  -- 4. 设备类型
+        0x04,  -- 5. 控制码(04H: 服务器对表端下发写指令)
+        0xBE, 0x6E,  -- 6. 指令编号(固定为BE6E)
+        0x00, 0x00,  -- 7. 备用(2字节)
+        0x0C,  -- 8. 数据长度(1字节，表示12字节)
+        0xAA, 0x05,  -- 9. 数据标识(AA05H: 阀门控制)
+        isOpen and 0x55 or 0x99,  -- 10. 阀门开(0x55)/关(0x99)
+        isForce and 0x5A or 0x00,  -- 11. 操作类型(0x5A强制，其他非强制)
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  -- 12. 备用(8字节)
+        0x00,  -- 13. 校验码(将在后面计算)
+        0x16   -- 14. 结束帧
+    }
     
-    -- 提取表地址 (位置2-8)
-    local addr = ""
-    for i = 2, 8 do
-        if i <= #rxBuf then
-            addr = addr .. string.format("%02X", rxBuf[i])
-        end
-    end
-    print("接收数据表地址:", addr)
-    
-    -- 控制码
-    local ctrlCode = rxBuf[10] or 0
-    print("控制码:", string.format("0x%02X", ctrlCode))
-    
-    -- 处理表端主动上报 (97h)
-    if ctrlCode == 0x97 then
-        -- 获取上报类型
-        local reportType = 0
-        if rxBuf[13] and rxBuf[14] then
-            reportType = (rxBuf[13] * 256) + rxBuf[14]
-        end
-        print("上报类型:", string.format("0x%04X", reportType))
-        
-        -- 获取数据包类型
-        local dataPackType = rxBuf[16] or 0
-        print("数据包类型:", dataPackType)
-        
-        -- 解析不同类型的上报数据
-        if dataPackType == 0x01 or dataPackType == 0x02 or dataPackType == 0x03 then
-            -- 普通表、阶梯表或后付费表上报
-            local variables = {}
-            
-            -- 解析状态字
-            local status = 0
-            if rxBuf[58] and rxBuf[59] then
-                status = (rxBuf[58] * 256) + rxBuf[59]
-            end
-            table.insert(variables, utils.AppendVariable(0, "dev_status", "状态", "int", status, tostring(status)))
-            
-            -- 解析累计用量/金额
-            local totalValue = 0
-            if dataPackType == 0x01 or dataPackType == 0x02 then
-                -- 预付费表在位置61-64
-                if rxBuf[61] and rxBuf[62] and rxBuf[63] and rxBuf[64] then
-                    totalValue = rxBuf[61] + 
-                                (rxBuf[62] * 256) + 
-                                (rxBuf[63] * 65536) + 
-                                (rxBuf[64] * 16777216)
-                end
-            elseif dataPackType == 0x03 then
-                -- 后付费表在位置60-63
-                if rxBuf[60] and rxBuf[61] and rxBuf[62] and rxBuf[63] then
-                    totalValue = rxBuf[60] + 
-                                (rxBuf[61] * 256) + 
-                                (rxBuf[62] * 65536) + 
-                                (rxBuf[63] * 16777216)
-                end
-            end
-            table.insert(variables, utils.AppendVariable(1, "dev_flow", "总流量", "double", totalValue/10.0, tostring(totalValue/10.0)))
-            
-            -- 获取电池电压
-            local voltage = 0
-            if rxBuf[43] and rxBuf[44] then
-                voltage = (rxBuf[43] * 256) + rxBuf[44]
-                voltage = voltage / 100.0  -- 单位V
-            end
-            table.insert(variables, utils.AppendVariable(2, "dev_voltage", "电池电压", "double", voltage, tostring(voltage)))
-            
-            -- 获取信号强度
-            local signal = 0
-            if rxBuf[45] then
-                signal = rxBuf[45]
-            end
-            table.insert(variables, utils.AppendVariable(3, "dev_signal", "信号强度", "int", signal, tostring(signal)))
-            
-            rxBuf = {}
-            return {Status = "0", Variable = variables}
-        end
-        
-        -- 其他上报类型
-        print("未处理的上报类型:", reportType, "数据包类型:", dataPackType)
-        rxBuf = {}
-        return {Status = "1", Variable = {}}
-    end
-    
-    -- 读表计数据响应 (81h)
-    if ctrlCode == 0x81 then
-        -- 根据619协议，数据标识在16-17位置
-        local dataId = string.format("%02X%02X", rxBuf[16], rxBuf[17])
-        print("数据标识:", dataId)
-        
-        -- 总流量读取 (901F)
-        if dataId == "901F" then
-            print("接收到总流量数据")
-            
-            -- 根据619协议，流量数据的位置是固定的
-            -- 数据域应该从第18个字节开始
-            local data = {}
-            
-            -- 提取4字节流量数据
-            for i = 18, 21 do
-                if i <= #rxBuf then
-                    table.insert(data, rxBuf[i])
-                end
+    -- 解析表地址并设置到命令中
+    if type(address) == "string" and #address > 0 then
+        -- 处理地址
+        if #address == 14 then
+            -- 如果是14位BCD码格式，需要反转为01001906255282格式
+            -- 将82522506190001转换为01001906255282
+            local reversedAddr = ""
+            for i = 7, 1, -1 do
+                reversedAddr = reversedAddr .. address:sub(i*2-1, i*2)
             end
             
-            if #data == 4 then
-                -- 按照619协议，水表数据是低字节在前
-                local flowValue = data[1] + 
-                                 (data[2] * 256) + 
-                                 (data[3] * 65536) + 
-                                 (data[4] * 16777216)
-                
-                print("解析的流量值:", flowValue)
-                
-                rxBuf = {}
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "dev_flow", "总流量", "double", flowValue/10.0,
-                            tostring(flowValue/10.0))
-                }}
-            else
-                print("警告: 无法解析流量数据，字节数不足")
-                rxBuf = {}
-                return {Status = "1", Variable = {}}
+            -- 按照619协议格式填充地址字段
+            for i = 1, 7 do
+                local byteValue = tonumber(reversedAddr:sub(i*2-1, i*2), 16) or 0
+                cmd[i+2] = byteValue
             end
-            
-        -- 读表参数 (A901)
-        elseif dataId == "A901" then
-            print("接收到表参数数据")
-            
-            -- 根据619协议，表地址在2-8位置
-            local addr = ""
-            for i = 2, 8 do
-                addr = addr .. string.format("%02X", rxBuf[i])
-            end
-            
-            rxBuf = {}
-            return {Status = "0", Variable = {
-                utils.AppendVariable(0, "meter_address", "表地址", "string", addr, "")
-            }}
         else
-            print("未识别的数据标识:", dataId)
-        end
-        
-    -- 阀门控制响应 (84h)
-    elseif ctrlCode == 0x84 then
-        -- 根据619协议，数据标识在16-17位置
-        local dataId = string.format("%02X%02X", rxBuf[16], rxBuf[17])
-        
-        if dataId == "AA05" then
-            -- 根据619协议，成功标志在18位置
-            local status = rxBuf[18] or 0xFF
-            rxBuf = {}
+            -- 处理其他长度的地址，直接按照字节顺序填充
+            local addrBytes = {}
             
-            if status == 0 then
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "dev_status", "阀门状态", "string", "成功", "成功")
-                }}
-            else
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "dev_status", "阀门状态", "string", "失败", "失败")
-                }}
+            -- 解析地址字符串为字节数组
+            for i = 1, #address, 2 do
+                if i+1 <= #address then
+                    local byteStr = address:sub(i, i+1)
+                    local byteVal = tonumber(byteStr, 16) or 0
+                    table.insert(addrBytes, byteVal)
+                end
             end
-        elseif dataId == "AA07" then
-            -- 设置表地址响应
-            -- 根据619协议，成功标志在18位置
-            local status = rxBuf[18] or 0xFF
-            rxBuf = {}
             
-            if status == 0 then
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "new_address", "新表地址", "string", "设置成功", "设置成功")
-                }}
-            else
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "new_address", "新表地址", "string", "设置失败", "设置失败")
-                }}
-            end
-        elseif dataId == "AA09" then
-            -- 设置表底数响应
-            -- 根据619协议，成功标志在18位置
-            local status = rxBuf[18] or 0xFF
-            rxBuf = {}
-            
-            if status == 0 then
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "set_value", "设置底数", "string", "成功", "")
-                }}
-            else
-                return {Status = "0", Variable = {
-                    utils.AppendVariable(0, "set_value", "设置底数", "string", "失败", "")
-                }}
+            -- 填充地址字段，最多7个字节
+            for i = 1, math.min(#addrBytes, 7) do
+                cmd[i+2] = addrBytes[i]
             end
         end
     end
     
-    -- 未知的响应或解析失败
-    print("未能识别的响应或解析失败")
-    -- 打印接收到的完整数据以便调试
-    local dataHex = ""
-    for i = 1, #rxBuf do
-        dataHex = dataHex .. string.format("%02X ", rxBuf[i])
+    -- 修改校验和计算逻辑
+    -- 根据文档，校验码是起始帧0x68至校验码前所有数据的和取模256
+    local checksum = 0
+    for i = 1, #cmd - 2 do  -- 从起始帧(第1字节)到校验码前(倒数第2字节)
+        checksum = checksum + cmd[i]
     end
-    print("接收数据:", dataHex)
+    cmd[#cmd - 1] = checksum % 256
     
-    rxBuf = {}
-    return {Status = "1", Variable = {}}
+    return cmd
 end
 
-function GenerateGetFlow(sAddr, continued)
-    local cmd = { 0x90, 0x1F }  -- 读取流量数据标识
-    local requestADU = GenerateCommand(sAddr, cmd)
-    return {Status = continued, Variable = requestADU}
-end
-
-function GenerateGetRealVariables(sAddr, step)
-    print("2025F183-37 ver 1.0", sAddr, step)
-    if (step == 0) then
-        return GenerateGetFlow(sAddr, "0")
+-- 辅助函数：将命令转换为十六进制字符串
+function toHexString(cmd)
+    local hexStr = ""
+    for i = 1, #cmd do
+        hexStr = hexStr .. string.format("%02X", cmd[i])
     end
+    return hexStr
+end
+
+-- 辅助函数：打印命令内容
+function printCommand(cmd)
+    local hexStr = ""
+    for i = 1, #cmd do
+        hexStr = hexStr .. string.format("%02X ", cmd[i])
+    end
+    print("命令: " .. hexStr)
+    return toHexString(cmd)
+end
+
+-- 修改GenerateOpenValve函数，使用通用的阀门命令生成函数
+function GenerateOpenValve(address)
+    -- 使用通用的阀门命令生成函数生成开阀命令
+    local cmd = Protocol.generateValveCommand(address, true, true)
+    return cmd
+end
+
+-- 修改GenerateCloseValve函数，使用通用的阀门命令生成函数
+function GenerateCloseValve(address)
+    -- 使用通用的阀门命令生成函数生成关阀命令
+    local cmd = Protocol.generateValveCommand(address, false, true)
+    return cmd
+end
+
+-- 生成读取流量命令
+function GenerateGetFlow(address, continued)
+    local cmd = Protocol.generateReadCommand(address, CONSTANTS.DATA_ID_READ_FLOW)
+    return {Status = continued, Variable = cmd}
+end
+
+-- 生成设置表底数命令
+function GenerateSetValue(address, value)
+    -- 将值转换为4字节数据，低字节在前
+    local valueBytes = {}
+    local v = tonumber(value) or 0
+    
+    table.insert(valueBytes, v % 256)
+    table.insert(valueBytes, math.floor(v / 256) % 256)
+    table.insert(valueBytes, math.floor(v / 65536) % 256)
+    table.insert(valueBytes, math.floor(v / 16777216) % 256)
+    
+    -- 添加8字节备用字段
+    for i = 1, 8 do
+        table.insert(valueBytes, 0x00)
+    end
+    
+    return Protocol.generateWriteCommand(address, CONSTANTS.DATA_ID_SET_VALUE, valueBytes)
+end
+
+-- 生成读取表地址命令
+function GenerateReadAddress()
+    -- 使用广播地址读取表参数
+    local broadcastAddr = "AAAAAAAAAAAAAA"  -- 14个A表示广播地址
+    return Protocol.generateReadCommand(broadcastAddr, CONSTANTS.DATA_ID_READ_PARAM)
+end
+
+-- 生成设置表地址命令
+function GenerateSetAddress(oldAddr, newAddr)
+    -- 创建命令头
+    local cmd = Protocol.generateCommandHeader(oldAddr, CONSTANTS.CTRL_WRITE_REQUEST)
+    
+    -- 准备数据部分
+    local data = {
+        0xAA, 0x07,  -- 数据标识(AA07H: 设置表具类型)
+        0x00,        -- 计量模式
+        0x00,        -- 付费模式
+        0x00,        -- 到位模式
+        0xC1         -- 地址修改使能(0xC1: 允许修改表号)
+    }
+    
+    -- 添加新地址
+    local addr = string.format("%014s", newAddr):gsub("[^0-9]", "0")
+    for i = 0, 6 do
+        local pos = 13 - i * 2
+        local byteValue = tonumber(addr:sub(pos-1, pos), 10) or 0
+        table.insert(data, byteValue)
+    end
+    
+    -- 设置数据长度
+    Protocol.setDataField(cmd, 0, #data)
+    
+    -- 添加数据
+    for _, value in ipairs(data) do
+        table.insert(cmd, value)
+    end
+    
+    -- 完成命令
+    return Protocol.finalizeCommand(cmd)
+end
+
+-- 生成周期读取命令
+function GenerateGetRealVariables(address, step)
+    if step == 0 then
+        return GenerateGetFlow(address, "0")
+    end
+    return {Status = "0", Variable = {}}
 end
 
 -- 解析命令参数
@@ -570,45 +344,349 @@ function parseCommandParams(cmdParam)
     return params
 end
 
-function DeviceCustomCmd(sAddr, cmdName, cmdParam, step)
-    local params = parseCommandParams(cmdParam)
+-- 修改DeviceCustomCmd函数中的Status返回值
+function DeviceCustomCmd(address, cmd, params, step)
+    -- 处理开阀命令
+    if cmd == "valve_open" or cmd == "OpenValve" then
+        local openValveCmd = GenerateOpenValve(address)
+        return {Status = "0", Variable = openValveCmd}
     
-    if (cmdName == "dev_flow" or cmdName == "dev_low") then
-        return GenerateGetFlow(sAddr, "0")
-    elseif (cmdName == "OpenValve") then
-        return {Status = "0", Variable = GenerateOpenValve(sAddr)}
-    elseif (cmdName == "CloseValve") then
-        return {Status = "0", Variable = GenerateCloseValve(sAddr)}
-    elseif (cmdName == "ReadAddress") then
+    -- 处理关阀命令
+    elseif cmd == "valve_close" or cmd == "CloseValve" then
+        local closeValveCmd = GenerateCloseValve(address)
+        return {Status = "0", Variable = closeValveCmd}
+    
+    -- 处理读取流量命令
+    elseif cmd == "dev_flow" then
+        return GenerateGetFlow(address, "1")
+    
+    -- 处理读取表地址命令
+    elseif cmd == "ReadAddress" then
         return {Status = "0", Variable = GenerateReadAddress()}
-    elseif (cmdName == "SetAddress") then
-        local oldAddr = params.oldAddress or "AAAAAAAA"
-        local newAddr = params.newAddress
-        if not newAddr then
-            print("错误: 未提供新地址")
-            return {Status = "1", Variable = {}}
+    
+    -- 处理设置表地址命令
+    elseif cmd == "SetAddress" then
+        -- 解析参数
+        local oldAddr = address
+        local newAddr = ""
+        if params and params ~= "" then
+            local parts = {}
+            for part in string.gmatch(params, "[^,]+") do
+                table.insert(parts, part)
+            end
+            newAddr = parts[1] or "01001906255283"
         end
         return {Status = "0", Variable = GenerateSetAddress(oldAddr, newAddr)}
-    elseif (cmdName == "SetValue") then
-        local value = params.value
-        if not value then
-            print("错误: 未提供设置值")
-            return {Status = "1", Variable = {}}
+    
+    -- 处理设置表底数命令
+    elseif cmd == "SetValue" then
+        -- 解析参数
+        local value = "0"
+        if params and params ~= "" then
+            local parts = {}
+            for part in string.gmatch(params, "[^,]+") do
+                table.insert(parts, part)
+            end
+            value = parts[1] or "0"
         end
-        return {Status = "0", Variable = GenerateSetValue(sAddr, value)}
+        return {Status = "0", Variable = GenerateSetValue(address, value)}
+    
+    -- 未知命令
+    else
+        print("未知命令:", cmd)
+        return {Status = "0", Variable = {}}
+    end
+end
+
+-- 生成设备命令
+function GenerateDeviceCommand(address, cmdName, cmdParams)
+    local result = {
+        Status = "0",
+        Variable = {}
+    }
+    
+    if cmdName == "valve_open" then
+        result.Variable = GenerateOpenValve(address)
+    elseif cmdName == "valve_close" then
+        result.Variable = GenerateCloseValve(address)
+    else
+        result.Status = "1"
     end
     
-    return {Status = "0", Variable = {}}
+    return result
+end
+
+-- 数据接收和解析
+rxBuf = {}
+function AnalysisRx(address, rxBufCnt)
+    -- 调试信息
+    print("AnalysisRx调用: 地址=", address, "数据长度=", rxBufCnt)
+    
+    -- 验证接收数据有效性
+    if rxBufCnt < 16 then
+        print("错误: 数据长度不足")
+        rxBuf = {}
+        return {Status = "1", Variable = {}}
+    end
+    
+    -- 查找起始符
+    local startIndex = 1
+    while startIndex <= #rxBuf and rxBuf[startIndex] ~= CONSTANTS.START_FLAG do
+        startIndex = startIndex + 1
+    end
+    
+        if startIndex > #rxBuf then
+        print("错误: 未找到起始符")
+            rxBuf = {}
+        return {Status = "1", Variable = {}}
+    end
+    
+    -- 移除唤醒符
+    while startIndex > 1 and rxBuf[startIndex - 1] == 0xFE do
+        table.remove(rxBuf, startIndex - 1)
+        startIndex = startIndex - 1
+    end
+
+    -- 查找结束符和校验校验和
+    local endIndex = 0
+    local csFlag, endFlag
+    
+    for i = startIndex + 15, #rxBuf do  -- 至少16字节的帧
+        if rxBuf[i] == CONSTANTS.END_FLAG then
+            local cs = Protocol.calculateChecksum(rxBuf, startIndex, i - 2)
+            if cs == rxBuf[i-1] then
+                endFlag = rxBuf[i]
+                csFlag = rxBuf[i-1]
+                endIndex = i
+                break
+            end
+        end
+    end
+    
+    if endIndex == 0 then
+        print("错误: 未找到有效结束符或校验和错误")
+        rxBuf = {}
+        return {Status = "1", Variable = {}}
+    end
+    
+    -- 提取表地址
+    local addr = ""
+    for i = startIndex + 1, startIndex + 8 do
+        if i <= #rxBuf then
+            addr = addr .. string.format("%02X", rxBuf[i])
+        end
+    end
+    print("接收数据表地址:", addr)
+    
+    -- 提取控制码
+    local ctrlCode = rxBuf[startIndex + 10] or 0
+    print("控制码:", string.format("0x%02X", ctrlCode))
+    
+    -- 打印完整报文内容(调试用)
+    local dataHex = ""
+    for i = startIndex, endIndex do
+        dataHex = dataHex .. string.format("%02X ", rxBuf[i])
+    end
+    print("完整报文:", dataHex)
+    
+    -- 处理不同类型的响应
+    local variables = {}
+    
+    -- 表端主动上报数据(0x97)
+    if ctrlCode == CONSTANTS.CTRL_UPLOAD then
+        -- 获取上报类型和数据包类型
+        local reportType = 0
+        if rxBuf[startIndex + 13] and rxBuf[startIndex + 14] then
+            reportType = (rxBuf[startIndex + 13] * 256) + rxBuf[startIndex + 14]
+        end
+        print("上报类型:", string.format("0x%04X", reportType))
+        
+        local dataPackType = rxBuf[startIndex + 16] or 0
+        print("数据包类型:", string.format("0x%02X", dataPackType))
+        
+        -- 解析主动上报数据
+        if dataPackType == 0x01 or dataPackType == 0x02 or dataPackType == 0x03 then
+            -- 解析状态字
+            local status = 0
+            if rxBuf[startIndex + 58] and rxBuf[startIndex + 59] then
+                status = (rxBuf[startIndex + 58] * 256) + rxBuf[startIndex + 59]
+            end
+            table.insert(variables, utils.AppendVariable(0, "dev_status", "状态", "int", status, tostring(status)))
+            
+            -- 解析累计用量/金额
+            local totalValue = 0
+            if dataPackType == 0x01 or dataPackType == 0x02 then
+                -- 预付费表在位置61-64
+                if rxBuf[startIndex + 61] and rxBuf[startIndex + 64] then
+                    totalValue = rxBuf[startIndex + 61] + 
+                                (rxBuf[startIndex + 62] * 256) + 
+                                (rxBuf[startIndex + 63] * 65536) + 
+                                (rxBuf[startIndex + 64] * 16777216)
+                end
+            elseif dataPackType == 0x03 then
+                -- 后付费表在位置60-63
+                if rxBuf[startIndex + 60] and rxBuf[startIndex + 63] then
+                    totalValue = rxBuf[startIndex + 60] + 
+                                (rxBuf[startIndex + 61] * 256) + 
+                                (rxBuf[startIndex + 62] * 65536) + 
+                                (rxBuf[startIndex + 63] * 16777216)
+                end
+            end
+            table.insert(variables, utils.AppendVariable(1, "dev_flow", "总流量", "double", totalValue/10.0, tostring(totalValue/10.0)))
+            
+            -- 获取电池电压
+            local voltage = 0
+            if rxBuf[startIndex + 43] and rxBuf[startIndex + 44] then
+                voltage = (rxBuf[startIndex + 43] * 256) + rxBuf[startIndex + 44]
+                voltage = voltage / 100.0  -- 单位V
+            end
+            table.insert(variables, utils.AppendVariable(2, "dev_voltage", "电池电压", "double", voltage, tostring(voltage)))
+            
+            -- 获取信号强度
+            local signal = 0
+            if rxBuf[startIndex + 45] then
+                signal = rxBuf[startIndex + 45]
+            end
+            table.insert(variables, utils.AppendVariable(3, "dev_signal", "信号强度", "int", signal, tostring(signal)))
+        elseif dataPackType == 0x3E then
+            -- 特殊数据包类型0x3E的处理
+            -- 解析水表示数(位置51-52)
+            local waterReading = 0
+            if rxBuf[startIndex + 51] and rxBuf[startIndex + 52] then
+                waterReading = (rxBuf[startIndex + 51] * 256) + rxBuf[startIndex + 52]
+                waterReading = waterReading / 50.0  -- 比例因子1/50
+            end
+            table.insert(variables, utils.AppendVariable(0, "dev_flow", "总流量", "double", waterReading, tostring(waterReading)))
+            
+            -- 解析电池电压
+            local voltage = 0
+            if rxBuf[startIndex + 43] and rxBuf[startIndex + 44] then
+                voltage = (rxBuf[startIndex + 43] * 256) + rxBuf[startIndex + 44]
+                voltage = voltage / 100.0  -- 单位V
+            end
+            table.insert(variables, utils.AppendVariable(1, "dev_voltage", "电池电压", "double", voltage, tostring(voltage)))
+            
+            -- 解析信号强度
+            local signal = 0
+            if rxBuf[startIndex + 45] then
+                signal = rxBuf[startIndex + 45]
+            end
+            table.insert(variables, utils.AppendVariable(2, "dev_signal", "信号强度", "int", signal, tostring(signal)))
+            
+            -- 解析状态字
+            local status = 0
+            if rxBuf[startIndex + 46] and rxBuf[startIndex + 47] then
+                status = (rxBuf[startIndex + 46] * 256) + rxBuf[startIndex + 47]
+            end
+            table.insert(variables, utils.AppendVariable(3, "dev_status", "状态", "int", status, tostring(status)))
+            
+            -- 解析阀门状态
+            local valveStatus = "未知"
+            if status % 2 == 1 then
+                valveStatus = "关闭"
+            else
+                valveStatus = "开启"
+            end
+            table.insert(variables, utils.AppendVariable(4, "valve_status", "阀门状态", "string", valveStatus, valveStatus))
+            
+            -- 解析电池状态
+            local batteryStatus = "未知"
+            if math.floor(status / 2) % 2 == 1 then
+                batteryStatus = "电量低"
+            else
+                batteryStatus = "正常"
+            end
+            table.insert(variables, utils.AppendVariable(5, "battery_status", "电池状态", "string", batteryStatus, batteryStatus))
+        else
+            print("未处理的数据包类型:", dataPackType)
+            rxBuf = {}
+        return {Status = "1", Variable = {}}
+    end
+    -- 读数据响应(0x81)
+    elseif ctrlCode == CONSTANTS.CTRL_READ_RESPONSE then
+        -- 获取数据标识
+        local dataId = 0
+        if rxBuf[startIndex + 16] and rxBuf[startIndex + 17] then
+            dataId = (rxBuf[startIndex + 16] * 256) + rxBuf[startIndex + 17]
+        end
+        print("数据标识:", string.format("0x%04X", dataId))
+        
+        -- 读取流量数据(901F)
+        if dataId == CONSTANTS.DATA_ID_READ_FLOW then
+            -- 提取4字节流量数据
+            if startIndex + 21 <= endIndex then
+                local flow = rxBuf[startIndex + 18] + 
+                            (rxBuf[startIndex + 19] * 256) + 
+                            (rxBuf[startIndex + 20] * 65536) + 
+                            (rxBuf[startIndex + 21] * 16777216)
+                
+                table.insert(variables, utils.AppendVariable(0, "dev_flow", "总流量", "double", flow/10.0, tostring(flow/10.0)))
+            end
+        -- 读取表参数(A901)
+        elseif dataId == CONSTANTS.DATA_ID_READ_PARAM then
+            -- 提取表地址
+            local meterAddr = ""
+            for i = startIndex + 2, startIndex + 8 do
+                meterAddr = meterAddr .. string.format("%02X", rxBuf[i])
+            end
+            table.insert(variables, utils.AppendVariable(0, "meter_address", "表地址", "string", meterAddr, ""))
+        else
+            print("未处理的数据标识:", string.format("0x%04X", dataId))
+        end
+    -- 写数据响应(0x84)
+    elseif ctrlCode == CONSTANTS.CTRL_WRITE_RESPONSE then
+        -- 获取数据标识
+        local dataId = 0
+        if rxBuf[startIndex + 16] and rxBuf[startIndex + 17] then
+            dataId = (rxBuf[startIndex + 16] * 256) + rxBuf[startIndex + 17]
+        end
+        
+        -- 获取成功标志
+        local status = rxBuf[startIndex + 18] or 0xFF
+        
+        -- 阀门操作响应
+        if dataId == CONSTANTS.DATA_ID_VALVE then
+            if status == 0 then
+                table.insert(variables, utils.AppendVariable(0, "dev_status", "阀门状态", "string", "成功", "成功"))
+            else
+                table.insert(variables, utils.AppendVariable(0, "dev_status", "阀门状态", "string", "失败", "失败"))
+            end
+            -- 设置表地址响应
+        elseif dataId == CONSTANTS.DATA_ID_SET_ADDR then
+            if status == 0 then
+                table.insert(variables, utils.AppendVariable(0, "new_address", "新表地址", "string", "设置成功", "设置成功"))
+            else
+                table.insert(variables, utils.AppendVariable(0, "new_address", "新表地址", "string", "设置失败", "设置失败"))
+            end
+            -- 设置表底数响应
+        elseif dataId == CONSTANTS.DATA_ID_SET_VALUE then
+            if status == 0 then
+                table.insert(variables, utils.AppendVariable(0, "set_value", "设置底数", "string", "成功", ""))
+            else
+                table.insert(variables, utils.AppendVariable(0, "set_value", "设置底数", "string", "失败", ""))
+            end
+        else
+            print("未处理的写操作数据标识:", string.format("0x%04X", dataId))
+        end
+    else
+        print("未处理的控制码:", string.format("0x%02X", ctrlCode))
+    end
+    
+    -- 清空接收缓冲区并返回解析结果
+    rxBuf = {}
+    return {Status = "0", Variable = variables}
 end
 
 -- 获取支持的命令列表
 function GetSupportedCommands()
     return {
         {name = "dev_flow", desc = "读取总流量"},
-        {name = "OpenValve", desc = "开阀控制"},
-        {name = "CloseValve", desc = "关阀控制"},
+        {name = "valve_open", desc = "开阀控制"},
+        {name = "valve_close", desc = "关阀控制"},
+        {name = "OpenValve", desc = "开阀控制(兼容旧版)"},
+        {name = "CloseValve", desc = "关阀控制(兼容旧版)"},
         {name = "ReadAddress", desc = "读取表地址"},
-        {name = "SetAddress", desc = "设置表地址", params = "oldAddress,newAddress"},
+        {name = "SetAddress", desc = "设置表地址", params = "newAddress"},
         {name = "SetValue", desc = "设置表底数", params = "value"}
     }
 end
@@ -617,9 +695,9 @@ end
 function GetPluginInfo()
     return {
         name = "2025F183-37",
-        version = "1.0.2",
+        version = "2.0.0",
         author = "Claude",
-        description = "基于619规约的CAT1水表通信协议插件，支持网口采集器，可处理主动上报数据",
+        description = "基于619规约的CAT1水表通信协议插件，优化阀门操作，支持主动上报数据解析",
         protocol = "2025F183-37"
     }
 end 

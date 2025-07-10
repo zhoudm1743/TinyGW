@@ -6,6 +6,7 @@ import (
 	"tinyGW/app/api/repository"
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/collect/worker"
+	"tinyGW/pkg/service/command"
 	"tinyGW/pkg/service/conf"
 	"tinyGW/pkg/service/event"
 
@@ -23,6 +24,7 @@ type (
 		workerLimiter        chan struct{} // 工作线程限制器
 		maxWorkers           int           // 最大同时工作线程数
 		workerCount          int32         // 当前工作线程计数
+		commandManager       *command.Manager
 	}
 )
 
@@ -32,6 +34,7 @@ func NewCollectorServer(
 	config *conf.Config,
 	e *event.EventService,
 	deviceTypeRepository repository.DeviceTypeRepository,
+	commandManager *command.Manager,
 ) *CollectorServer {
 	// 根据CPU核心数和配置决定最大工作线程数
 	maxWorkers := runtime.NumCPU() * 2
@@ -49,6 +52,7 @@ func NewCollectorServer(
 		eventSrv:             e,
 		workerLimiter:        make(chan struct{}, maxWorkers), // 限制最大并发工作线程
 		maxWorkers:           maxWorkers,
+		commandManager:       commandManager,
 	}
 }
 
@@ -111,6 +115,7 @@ func (cs *CollectorServer) Add(collector models.Collector) {
 		collector, cs.deviceRepository,
 		cs.config, cs.eventSrv,
 		cs.deviceTypeRepository,
+		cs.commandManager,
 	)
 
 	w.Start()

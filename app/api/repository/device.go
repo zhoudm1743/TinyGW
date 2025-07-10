@@ -2,9 +2,10 @@ package repository
 
 import (
 	"errors"
+	"tinyGW/app/models"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"tinyGW/app/models"
 )
 
 type DeviceRepository interface {
@@ -13,6 +14,7 @@ type DeviceRepository interface {
 	Find(name string) (models.Device, error)
 	FindAll() ([]models.Device, error)
 	List(limit int, offset int) ([]models.Device, int64, error)
+	FindByAddr(addr string) (models.Device, error)
 
 	CollectorIsUsed(collector *models.Collector) bool    // 是否引用了采集接口
 	DeviceTypeIsUsed(deviceType *models.DeviceType) bool // 是否引用了设备类型
@@ -112,6 +114,12 @@ func (c deviceRepository) List(limit int, offset int) ([]models.Device, int64, e
 		return nil, 0, err
 	}
 	return devices, count, nil
+}
+
+func (c deviceRepository) FindByAddr(addr string) (models.Device, error) {
+	var device models.Device
+	err := c.db.Where("address = ?", addr).First(&device).Error
+	return device, err
 }
 
 func NewDeviceRepository(db *gorm.DB) DeviceRepository {
