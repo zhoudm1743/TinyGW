@@ -3,7 +3,7 @@
 [![Go Version](https://img.shields.io/badge/go-1.19+-blue.svg)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-TinyGW 是一款功能强大的物联网网关系统，专为工业设备数据采集与处理设计。支持多种工业协议，提供设备接入、数据采集、边缘计算、云端通信等功能，为物联网解决方案提供可靠的边缘层支持。
+TinyGW 是一款功能强大的物联网网关系统，专为工业设备数据采集与处理设计。支持多种工业协议，提供设备接入、数据采集、边缘计算、云端通信等功能，为物联网解决方案提供可靠的边缘层支持。欢迎PR
 
 ## TinyGW
 ### 程序架构图
