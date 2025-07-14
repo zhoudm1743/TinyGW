@@ -23,7 +23,8 @@ type Logger struct {
 }
 
 type Serial struct {
-	OpenEveryTime bool `json:"openEveryTime" yaml:"openEveryTime"`
+	OpenEveryTime  bool   `json:"openEveryTime" yaml:"openEveryTime"`
+	NotCollectType string `json:"notCollectType" yaml:"notCollectType"`
 }
 
 type Server struct {

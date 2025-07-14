@@ -15,6 +15,7 @@ logger:
     maxsize: 10
 serial:
     openeverytime: true
+    notCollectType: "2025F183-37"
 server:
     host: 0.0.0.0
     module: debug

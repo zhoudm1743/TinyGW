@@ -1,14 +1,17 @@
 package task
 
 import (
-	"github.com/robfig/cron/v3"
-	"go.uber.org/zap"
+	"strings"
 	"sync"
 	"time"
 	"tinyGW/app/api/repository"
 	"tinyGW/app/models"
 	"tinyGW/pkg/service/collect"
+	"tinyGW/pkg/service/conf"
 	"tinyGW/pkg/service/event"
+
+	"github.com/robfig/cron/v3"
+	"go.uber.org/zap"
 )
 
 type (
@@ -18,16 +21,18 @@ type (
 		collectorServer  *collect.CollectorServer
 		deviceRepository repository.DeviceRepository
 		event            *event.EventService
+		conf             *conf.Config
 	}
 )
 
 // NewCollectTaskServer 实例化
-func NewCollectTaskServer(collectorServer *collect.CollectorServer, deviceRepository repository.DeviceRepository, e *event.EventService) *CollectTaskServer {
+func NewCollectTaskServer(collectorServer *collect.CollectorServer, deviceRepository repository.DeviceRepository, e *event.EventService, conf *conf.Config) *CollectTaskServer {
 	return &CollectTaskServer{
 		tasks:            &sync.Map{},
 		collectorServer:  collectorServer,
 		deviceRepository: deviceRepository,
 		event:            e,
+		conf:             conf,
 	}
 }
 
@@ -119,19 +124,50 @@ func (cts *CollectTaskServer) Stop(task *models.CollectTask) {
 // Collect 数据采集
 func (cts *CollectTaskServer) Collect(ds []string) {
 	zap.S().Info("采集开始：CollectTaskServer->Collect")
-	var devices []models.Device
-	if len(ds) == 0 {
-		devices, _ = cts.deviceRepository.FindAll()
-	} else {
-		for _, d := range ds {
-			device, _ := cts.deviceRepository.Find(d)
-			devices = append(devices, device)
+	notCollectType := cts.conf.Serial.NotCollectType
+	notCollectTypes := strings.Split(notCollectType, ",")
+	if len(notCollectTypes) == 0 {
+		// 默认不采集2025F183-37
+		notCollectTypes = []string{"2025F183-37"}
+	}
+
+	// 用于快速检查设备类型是否在不采集列表中
+	notCollectMap := make(map[string]bool)
+	for _, t := range notCollectTypes {
+		if t != "" {
+			notCollectMap[t] = true
 		}
 	}
+
+	var devices []models.Device
+	if len(ds) == 0 {
+		// 没有指定设备，获取所有设备
+		allDevices, _ := cts.deviceRepository.FindAll()
+		// 过滤掉不需要采集的设备类型
+		for _, device := range allDevices {
+			if !notCollectMap[device.Type.Driver] {
+				devices = append(devices, device)
+			}
+		}
+	} else {
+		// 指定了设备列表，只采集指定的设备（同样过滤掉不需要采集的类型）
+		for _, deviceID := range ds {
+			device, err := cts.deviceRepository.Find(deviceID)
+			if err != nil {
+				zap.S().Errorf("查找设备[%s]失败: %v", deviceID, err)
+				continue
+			}
+			if !notCollectMap[device.Type.Driver] {
+				devices = append(devices, device)
+			}
+		}
+	}
+
 	if len(devices) == 0 {
 		zap.S().Info("没有需要采集的设备")
 		return
 	}
+
 	for _, device := range devices {
 		if worker, ok := cts.collectorServer.FindByCollectorName(device.Collector.Name); ok {
 			if worker.CollectTaskIsFull() {
