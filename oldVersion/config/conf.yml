@@ -1,0 +1,28 @@
+cloud:
+    clientid: zsxagwA001
+    host: mqtt.zsxakj.com
+    ip: mqtt.zsxakj.com
+    # password: xakj1PnGD8y#s$
+    port: 1883
+    # username: energy-cloud
+    password: "123456"
+    username: bgscs
+logger:
+    filename: public/logs/energy.log
+    level: debug
+    maxage: 3
+    maxbackups: 10
+    maxsize: 10
+serial:
+    openeverytime: true
+    notCollectType: "2025F183-37"
+server:
+    host: 0.0.0.0
+    module: debug
+    port: 1883
+    tcpPorts: "51483,51484,51485"
+subscribe:
+    host: mqtt.zsxakj.com
+    password: "123456"
+    port: 1883
+    username: bgscs

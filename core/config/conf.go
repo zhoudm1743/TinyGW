@@ -2,10 +2,16 @@ package config
 
 import "go.uber.org/fx"
 
+type Logger struct {
+	Level  string `yaml:"level"`
+	Format string `yaml:"format"`
+}
+
 type Config struct {
 	Server  Server  `yaml:"server"`
 	Cloud   Cloud   `yaml:"cloud"`
 	SubMqtt SubMqtt `yaml:"subMqtt"`
+	Logger  Logger  `yaml:"logger"`
 }
 
 type SubMqtt struct {
@@ -31,7 +37,7 @@ func NewConfig() *Config {
 	return &Config{
 		Server: Server{
 			APPID: "tinyGW001",
-			Port:  "8080",
+			Port:  "8001",
 		},
 		Cloud: Cloud{
 			Host:     "mqtt.zsxakj.com",
@@ -44,6 +50,10 @@ func NewConfig() *Config {
 			Port:     "1883",
 			User:     "tinyGW001",
 			Password: "123456",
+		},
+		Logger: Logger{
+			Level:  "info",
+			Format: "text",
 		},
 	}
 }
