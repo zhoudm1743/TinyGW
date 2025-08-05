@@ -5,8 +5,10 @@ go 1.24.0
 require github.com/gin-gonic/gin v1.10.1
 
 require (
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
+	golang.org/x/sync v0.16.0 // indirect
 )
 
 require (
@@ -15,6 +17,7 @@ require (
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-contrib/sse v1.1.0 // indirect
