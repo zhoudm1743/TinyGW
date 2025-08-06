@@ -1,7 +1,5 @@
 package schemas
 
-import "go.uber.org/fx"
-
-var Module = fx.Options(
-// TODO: req.Module, resp.Module
-)
+// Package schemas contains request and response schemas for the API
+// The req package contains request schemas
+// The resp package contains response schemas

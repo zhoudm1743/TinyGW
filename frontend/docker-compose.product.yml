@@ -1,0 +1,8 @@
+services:
+  nova-admin:
+    build:
+      context: .
+      dockerfile: ./docker/dockerfile.product
+    container_name: nova-admin
+    ports:
+      - 80:80

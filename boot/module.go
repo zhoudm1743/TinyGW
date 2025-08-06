@@ -8,6 +8,7 @@ import (
 	"TinyGW/core/logger"
 	"TinyGW/core/script"
 	"TinyGW/core/web"
+	"TinyGW/internal"
 
 	"go.uber.org/fx"
 )
@@ -20,4 +21,5 @@ var Module = fx.Options(
 	cache.Module,
 	web.Module,
 	script.Module,
+	internal.Module,
 )

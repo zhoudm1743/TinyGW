@@ -1,117 +1,32 @@
 package routes
 
-import (
-	"TinyGW/internal/service"
-	"TinyGW/models"
-	"net/http"
-	"strconv"
+func registerDeviceTypeRoutes(r Routes) {
+	api := r.Engine.Group("/api")
 
-	"github.com/gin-gonic/gin"
-)
+	// 需要认证的路由
+	auth := api.Group("/")
+	// TODO: 添加认证中间件
+	// auth.Use(middleware.JWTAuth())
 
-func RegisterDeviceTypeRoutes(r *gin.Engine, svc service.DeviceTypeService) {
-	group := r.Group("/device_type")
-	{
-		group.POST("", func(c *gin.Context) {
-			var deviceType models.DeviceType
-			if err := c.ShouldBindJSON(&deviceType); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			if err := svc.Save(&deviceType); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"success": true})
-		})
+	// 设备类型相关路由
+	auth.POST("/device-type", r.DeviceTypeController.Create)
+	auth.PUT("/device-type", r.DeviceTypeController.Update)
+	auth.DELETE("/device-type/:name", r.DeviceTypeController.Delete)
+	auth.GET("/device-type/:name", r.DeviceTypeController.Get)
+	auth.GET("/device-types", r.DeviceTypeController.List)
+	auth.GET("/device-types/all", r.DeviceTypeController.GetAll)
+	auth.GET("/device-type/count", r.DeviceTypeController.Count)
 
-		group.GET("", func(c *gin.Context) {
-			deviceTypes, err := svc.FindAll()
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, deviceTypes)
-		})
+	// 设备类型属性管理
+	auth.GET("/device-type/:name/properties", r.DeviceTypeController.GetProperties)
+	auth.PUT("/device-type/:name/properties", r.DeviceTypeController.UpdateProperties)
 
-		group.GET(":name", func(c *gin.Context) {
-			name := c.Param("name")
-			deviceType, err := svc.Find(name)
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, deviceType)
-		})
+	// 单个属性管理
+	auth.POST("/device-type/:name/property", r.DeviceTypeController.AddProperty)
+	auth.PUT("/device-type/:name/property/:propertyName", r.DeviceTypeController.UpdateProperty)
+	auth.DELETE("/device-type/:name/property/:propertyName", r.DeviceTypeController.DeleteProperty)
+	auth.GET("/device-type/:name/property/:propertyName", r.DeviceTypeController.GetProperty)
 
-		group.DELETE(":name", func(c *gin.Context) {
-			name := c.Param("name")
-			if err := svc.Delete(name); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"success": true})
-		})
-
-		// 属性相关接口
-		group.POST(":name/property", func(c *gin.Context) {
-			name := c.Param("name")
-			var prop models.DeviceProperty
-			if err := c.ShouldBindJSON(&prop); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			if err := svc.AddProperties(name, &prop); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"success": true})
-		})
-
-		group.PUT(":name/property/:id", func(c *gin.Context) {
-			name := c.Param("name")
-			id, _ := strconv.Atoi(c.Param("id"))
-			var prop models.DeviceProperty
-			if err := c.ShouldBindJSON(&prop); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-			if err := svc.UpdateProperties(name, id, &prop); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"success": true})
-		})
-
-		group.DELETE(":name/property/:id", func(c *gin.Context) {
-			name := c.Param("name")
-			id, _ := strconv.Atoi(c.Param("id"))
-			if err := svc.DeleteProperties(name, id); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, gin.H{"success": true})
-		})
-
-		group.GET(":name/property/:id", func(c *gin.Context) {
-			name := c.Param("name")
-			id, _ := strconv.Atoi(c.Param("id"))
-			prop, err := svc.FindProperty(name, id)
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, prop)
-		})
-
-		group.GET(":name/property", func(c *gin.Context) {
-			name := c.Param("name")
-			props, err := svc.FindAllProperties(name)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-				return
-			}
-			c.JSON(http.StatusOK, props)
-		})
-	}
+	// 文件上传
+	auth.POST("/device-type/:name/upload", r.DeviceTypeController.Upload)
 }
